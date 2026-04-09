@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clipboard Manager</title>
+<style>
+:root {
+    --bg-base: #ffffff;
+    --bg-surface: #f5f5f7;
+    --bg-overlay: #eeeef0;
+    --bg-hover: #f0f0f2;
+    --bg-selected: #e8edfb;
+    --text-primary: #1d1d1f;
+    --text-secondary: #6e6e73;
+    --text-muted: #aeaeb2;
+    --accent: #007aff;
+    --accent-dim: rgba(0, 122, 255, 0.1);
+    --yellow: #ff9f0a;
+    --yellow-dim: rgba(255, 159, 10, 0.12);
+    --red: #ff3b30;
+    --green: #34c759;
+    --border: #e5e5ea;
+    --border-light: #d1d1d6;
+    --shadow: rgba(0, 0, 0, 0.06);
+    --radius: 10px;
+    --radius-sm: 6px;
+    --transition: 0.15s ease;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* ===== Draggable Titlebar Area ===== */
+.titlebar {
+    height: 28px;
+    -webkit-app-region: drag;
+    background: transparent;
+    position: relative;
+    z-index: 10;
+}
+
+/* ===== Main Container ===== */
+.container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 28px);
+    padding: 0 16px 12px;
+    gap: 10px;
+}
+
+/* ===== Search Bar ===== */
+.search-wrapper {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    font-size: 14px;
+    pointer-events: none;
+}
+
+#searchInput {
+    width: 100%;
+    height: 40px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0 14px 0 36px;
+    font-size: 14px;
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color var(--transition), box-shadow var(--transition);
+    -webkit-app-region: no-drag;
+}
+
+#searchInput:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+#searchInput::placeholder {
+    color: var(--text-muted);
+}
+
+/* ===== Tabs ===== */
+.tabs {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+    background: var(--bg-surface);
+    border-radius: var(--radius);
+    padding: 3px;
+}
+
+.tab {
+    flex: 1;
+    padding: 7px 16px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    border-radius: 7px;
+    cursor: pointer;
+    transition: all var(--transition);
+    position: relative;
+    -webkit-app-region: no-drag;
+}
+
+.tab:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.tab.active {
+    color: var(--text-primary);
+    background: var(--bg-base);
+    box-shadow: 0 1px 3px var(--shadow), 0 0 0 0.5px rgba(0,0,0,0.04);
+    font-weight: 600;
+}
+
+.tab .count {
+    display: inline-block;
+    margin-left: 6px;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-muted);
+    background: var(--bg-overlay);
+    padding: 1px 7px;
+    border-radius: 10px;
+    min-width: 20px;
+}
+
+.tab.active .count {
+    background: var(--accent-dim);
+    color: var(--accent);
+    font-weight: 500;
+}
+
+/* ===== Item List ===== */
+.list-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-radius: var(--radius);
+    background: var(--bg-base);
+    border: 1px solid var(--border);
+}
+
+.list-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.list-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.list-container::-webkit-scrollbar-thumb {
+    background: var(--border-light);
+    border-radius: 3px;
+}
+
+.list-container::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}
+
+.item {
+    display: flex;
+    align-items: center;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background var(--transition);
+    border-bottom: 1px solid var(--border);
+    gap: 10px;
+    -webkit-app-region: no-drag;
+}
+
+.item:last-child {
+    border-bottom: none;
+}
+
+.item:hover {
+    background: var(--bg-hover);
+}
+
+.item.selected {
+    background: var(--bg-selected);
+    border-left: 3px solid var(--accent);
+    padding-left: 11px;
+}
+
+.item-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.item-text {
+    font-size: 13px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.4;
+}
+
+.item-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.item-actions {
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity var(--transition);
+    flex-shrink: 0;
+}
+
+.item:hover .item-actions,
+.item.selected .item-actions {
+    opacity: 1;
+}
+
+.action-btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    transition: all var(--transition);
+    -webkit-app-region: no-drag;
+}
+
+.action-btn:hover {
+    background: var(--bg-overlay);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+.action-btn.fav-active {
+    color: var(--yellow);
+}
+
+.action-btn.delete:hover {
+    color: var(--red);
+    background: rgba(255, 59, 48, 0.08);
+    border-color: rgba(255, 59, 48, 0.2);
+}
+
+/* ===== Empty State ===== */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 40px;
+    color: var(--text-muted);
+}
+
+.empty-icon {
+    font-size: 40px;
+    margin-bottom: 12px;
+    opacity: 0.5;
+}
+
+.empty-text {
+    font-size: 14px;
+    text-align: center;
+    line-height: 1.6;
+}
+
+/* ===== Footer ===== */
+.footer {
+    flex-shrink: 0;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    padding: 6px 4px 0;
+}
+
+.footer-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 4px 10px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition);
+    -webkit-app-region: no-drag;
+}
+
+.footer-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-light);
+    color: var(--text-primary);
+}
+</style>
+</head>
+<body>
+
+<div class="titlebar"></div>
+
+<div class="container">
+    <!-- Search -->
+    <div class="search-wrapper">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="搜索剪切板内容..." autocomplete="off" spellcheck="false">
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs" id="tabs">
+        <div class="tab active" data-tab="history" onclick="switchTab('history')">
+            📋 历史 <span class="count" id="historyCount">0</span>
+        </div>
+        <div class="tab" data-tab="favorites" onclick="switchTab('favorites')">
+            ⭐ 收藏 <span class="count" id="favoritesCount">0</span>
+        </div>
+    </div>
+
+    <!-- List -->
+    <div class="list-container" id="listContainer">
+        <div class="empty-state" id="emptyState">
+            <div class="empty-icon">📋</div>
+            <div class="empty-text">暂无剪切板记录<br>复制一些内容试试</div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        <button class="footer-btn" id="openDataFileBtn" title="查看历史数据文件">📂 数据文件</button>
+    </div>
+</div>
+
+<script>
+// ===== State =====
+const TABS = ['history', 'favorites'];
+let currentTab = 'history';
+let selectedIndex = 0;
+let allData = { history: [], favorites: [] };
+let filteredItems = [];
+
+// ===== Get current list based on tab and filter =====
+function getCurrentItems() {
+    const items = currentTab === 'history' ? allData.history : allData.favorites;
+    const query = document.getElementById('searchInput').value.toLowerCase().trim();
+    if (!query) return items;
+    return items.filter(item => item.content.toLowerCase().includes(query));
+}
+
+// ===== Render list =====
+function renderList() {
+    filteredItems = getCurrentItems();
+    const container = document.getElementById('listContainer');
+
+    if (filteredItems.length === 0) {
+        const query = document.getElementById('searchInput').value.trim();
+        const emptyIcon = currentTab === 'favorites' ? '⭐' : '📋';
+        const emptyText = query
+            ? '没有找到匹配的内容'
+            : (currentTab === 'favorites' ? '暂无收藏内容<br>选中条目按 ⌘S 收藏' : '暂无剪切板记录<br>复制一些内容试试');
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">${emptyIcon}</div>
+                <div class="empty-text">${emptyText}</div>
+            </div>`;
+        return;
+    }
+
+    // Clamp selected index
+    if (selectedIndex >= filteredItems.length) selectedIndex = filteredItems.length - 1;
+    if (selectedIndex < 0) selectedIndex = 0;
+
+    let html = '';
+    filteredItems.forEach((item, index) => {
+        const isSelected = index === selectedIndex;
+        const time = formatTime(item.timestamp);
+        const preview = escapeHtml(item.content).replace(/\n/g, ' ↵ ');
+        const charCount = item.content.length;
+
+        html += `
+            <div class="item ${isSelected ? 'selected' : ''}"
+                 data-index="${index}"
+                 data-action="paste">
+                <div class="item-content">
+                    <div class="item-text">${preview}</div>
+                    <div class="item-meta">
+                        <span>${time}</span>
+                        <span>${charCount} 字符</span>
+                    </div>
+                </div>
+                <div class="item-actions">
+                    <button class="action-btn ${item.favorite ? 'fav-active' : ''}"
+                            data-action="toggleFav"
+                            data-id="${item.id}"
+                            title="${item.favorite ? '取消收藏' : '收藏'}">
+                        ${item.favorite ? '★' : '☆'}
+                    </button>
+                    <button class="action-btn delete"
+                            data-action="delete"
+                            data-id="${item.id}"
+                            title="删除">
+                        ✕
+                    </button>
+                </div>
+            </div>`;
+    });
+
+    container.innerHTML = html;
+    scrollToSelected();
+}
+
+// ===== Scroll to keep selected item visible =====
+function scrollToSelected() {
+    const container = document.getElementById('listContainer');
+    const selected = container.querySelector('.item.selected');
+    if (selected) {
+        const containerRect = container.getBoundingClientRect();
+        const itemRect = selected.getBoundingClientRect();
+        if (itemRect.top < containerRect.top) {
+            selected.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        } else if (itemRect.bottom > containerRect.bottom) {
+            selected.scrollIntoView({ block: 'end', behavior: 'smooth' });
+        }
+    }
+}
+
+// ===== Tab switching =====
+function switchTab(tab) {
+    currentTab = tab;
+    selectedIndex = 0;
+    document.querySelectorAll('.tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.tab === tab);
+    });
+    renderList();
+}
+
+function switchToNextTab(direction) {
+    const currentIdx = TABS.indexOf(currentTab);
+    const nextIdx = currentIdx + direction;
+    if (nextIdx >= 0 && nextIdx < TABS.length) {
+        switchTab(TABS[nextIdx]);
+    }
+}
+
+// ===== Actions =====
+function pasteItem(index) {
+    const item = filteredItems[index];
+    if (!item) return;
+    window.webkit.messageHandlers.pasteItem.postMessage({
+        id: item.id,
+        content: item.content
+    });
+}
+
+function toggleFav(id) {
+    window.webkit.messageHandlers.toggleFavorite.postMessage(id);
+}
+
+function deleteItem(id) {
+    window.webkit.messageHandlers.deleteItem.postMessage(id);
+}
+
+// ===== Helper functions =====
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function formatTime(timestamp) {
+    const date = new Date(timestamp * 1000);
+    const now = new Date();
+    const diff = (now - date) / 1000;
+
+    if (diff < 60) return '刚刚';
+    if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+    if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+
+    const isThisYear = date.getFullYear() === now.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+
+    if (isThisYear) {
+        return `${month}-${day} ${hours}:${minutes}`;
+    }
+    return `${date.getFullYear()}-${month}-${day} ${hours}:${minutes}`;
+}
+
+function updateCounts() {
+    document.getElementById('historyCount').textContent = allData.history.length;
+    document.getElementById('favoritesCount').textContent = allData.favorites.length;
+}
+
+// ===== API called from Swift =====
+function refreshData(jsonStr) {
+    try {
+        allData = JSON.parse(jsonStr);
+    } catch(e) {
+        console.error('Failed to parse data:', e);
+        return;
+    }
+    updateCounts();
+    renderList();
+}
+
+function focusSearch() {
+    const input = document.getElementById('searchInput');
+    input.value = '';
+    input.focus();
+    selectedIndex = 0;
+    renderList();
+}
+
+// ===== Keyboard handling =====
+document.addEventListener('keydown', function(e) {
+    // ESC - hide window
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        window.webkit.messageHandlers.hideWindow.postMessage(null);
+        return;
+    }
+
+    // Tab key (without Cmd) - switch tabs
+    if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        if (e.shiftKey) {
+            switchToNextTab(-1); // Shift+Tab = previous tab
+        } else {
+            switchToNextTab(1);  // Tab = next tab
+        }
+        return;
+    }
+
+    // Cmd+F - focus search input
+    if (e.key === 'f' && e.metaKey && !e.shiftKey) {
+        e.preventDefault();
+        document.getElementById('searchInput').focus();
+        document.getElementById('searchInput').select();
+        return;
+    }
+
+    // Cmd+S - toggle favorite
+    if (e.key === 's' && e.metaKey && !e.shiftKey) {
+        e.preventDefault();
+        const item = filteredItems[selectedIndex];
+        if (item) toggleFav(item.id);
+        return;
+    }
+
+    // Arrow Up
+    if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (filteredItems.length > 0) {
+            selectedIndex = Math.max(0, selectedIndex - 1);
+            renderList();
+        }
+        return;
+    }
+
+    // Arrow Down
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (filteredItems.length > 0) {
+            selectedIndex = Math.min(filteredItems.length - 1, selectedIndex + 1);
+            renderList();
+        }
+        return;
+    }
+
+    // Arrow Left / Right - switch tabs (only when search input is empty or cursor at boundary)
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const input = document.getElementById('searchInput');
+        const isInSearch = document.activeElement === input;
+
+        if (isInSearch) {
+            // In search input: only allow tab switch when input is empty
+            if (input.value.length === 0) {
+                e.preventDefault();
+                switchToNextTab(e.key === 'ArrowLeft' ? -1 : 1);
+            }
+            // Otherwise let left/right work normally in the input
+        } else {
+            e.preventDefault();
+            switchToNextTab(e.key === 'ArrowLeft' ? -1 : 1);
+        }
+        return;
+    }
+
+    // Enter - paste selected item
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        if (filteredItems.length > 0) {
+            pasteItem(selectedIndex);
+        }
+        return;
+    }
+
+    // Delete/Backspace with Cmd - delete item
+    if ((e.key === 'Delete' || e.key === 'Backspace') && e.metaKey) {
+        e.preventDefault();
+        const item = filteredItems[selectedIndex];
+        if (item) deleteItem(item.id);
+        return;
+    }
+});
+
+// Prevent up/down from moving cursor in search input
+document.getElementById('searchInput').addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+    }
+});
+
+// Search input filtering
+document.getElementById('searchInput').addEventListener('input', function() {
+    selectedIndex = 0;
+    renderList();
+});
+
+// Request initial data
+window.addEventListener('load', function() {
+    window.webkit.messageHandlers.getData.postMessage(null);
+});
+
+// Open data file button
+document.getElementById('openDataFileBtn').addEventListener('click', function() {
+    window.webkit.messageHandlers.openDataFile.postMessage(null);
+});
+
+// ===== Event Delegation for list items =====
+document.getElementById('listContainer').addEventListener('click', function(e) {
+    // Check if clicked on an action button (or child of it)
+    const actionBtn = e.target.closest('[data-action="toggleFav"], [data-action="delete"]');
+    if (actionBtn) {
+        e.stopPropagation();
+        const id = actionBtn.getAttribute('data-id');
+        if (actionBtn.getAttribute('data-action') === 'toggleFav') {
+            toggleFav(id);
+        } else if (actionBtn.getAttribute('data-action') === 'delete') {
+            deleteItem(id);
+        }
+        return;
+    }
+
+    // Check if clicked on an item row (paste action)
+    const itemEl = e.target.closest('.item[data-action="paste"]');
+    if (itemEl) {
+        const index = parseInt(itemEl.getAttribute('data-index'), 10);
+        pasteItem(index);
+    }
+});
+
+document.getElementById('listContainer').addEventListener('mouseover', function(e) {
+    const itemEl = e.target.closest('.item[data-index]');
+    if (itemEl) {
+        const index = parseInt(itemEl.getAttribute('data-index'), 10);
+        if (index !== selectedIndex) {
+            selectedIndex = index;
+            renderList();
+        }
+    }
+});
+</script>
+</body>
+</html>
