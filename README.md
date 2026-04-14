@@ -7,7 +7,7 @@
 | 插件 | 触发方式 | 说明 |
 |------|----------|------|
 | [Clipboard Manager](./clipboard-manager) | `⌘⌥V` | 剪切板历史管理，支持搜索、收藏、快速粘贴 |
-| [JSON Formatter](./json-formatter) | Alfred 输入 `jq` | JSON 格式化 / 压缩 / 语法高亮 / 错误检测 |
+| [Coding Tool](./coding-tool) | `⌘⇧T` / 输入 `ct` | 编程工具箱：JSON 格式化 + 时间戳转换 |
 
 ## 🛠 环境要求
 
@@ -27,8 +27,8 @@ xcode-select --install
 # 安装 Clipboard Manager
 cd clipboard-manager && bash install.sh
 
-# 安装 JSON Formatter
-cd json-formatter && bash install.sh
+# 安装 Coding Tool
+cd coding-tool && bash install.sh
 ```
 
 安装完成后双击生成的 `.alfredworkflow` 文件即可导入 Alfred。
@@ -36,25 +36,25 @@ cd json-formatter && bash install.sh
 ## 📁 项目结构
 
 ```
-alfred-workflows/
+alfred/
 ├── README.md
 ├── LICENSE
 ├── .gitignore
 ├── clipboard-manager/
-│   ├── README.md          # 插件说明
-│   ├── install.sh         # 编译 & 打包脚本
+│   ├── README.md
+│   ├── install.sh
 │   └── src/
-│       ├── info.plist             # Alfred Workflow 配置
-│       ├── clipboard_manager.swift   # Swift 源码
-│       └── clipboard_manager.html    # 界面
-└── json-formatter/
-    ├── README.md          # 插件说明
-    ├── install.sh         # 编译 & 打包脚本
+│       ├── info.plist
+│       ├── clipboard_manager.swift
+│       └── clipboard_manager.html
+└── coding-tool/
+    ├── README.md
+    ├── install.sh
     └── src/
-        ├── info.plist             # Alfred Workflow 配置
-        ├── json_formatter.swift   # Swift 源码
-        ├── json_formatter.html    # 界面
-        └── icon.png               # 图标
+        ├── info.plist
+        ├── coding_tool.swift
+        ├── coding_tool.html
+        └── icon.png
 ```
 
 ## 🏗 技术栈

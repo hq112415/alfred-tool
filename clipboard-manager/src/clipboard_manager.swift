@@ -7,6 +7,7 @@ let pidFile = "/tmp/clipboard_manager_\(getuid()).pid"
 let dataDir = NSHomeDirectory() + "/.clipboard_manager"
 let dataFile = dataDir + "/data.json"
 let configFile = dataDir + "/config.json"
+let defaultTodoFile = dataDir + "/todo.md"
 let maxHistoryCount = 1000
 
 // MARK: - Data Models
@@ -32,12 +33,37 @@ struct ClipboardData: Codable {
     }
 }
 
+// MARK: - Week Log Data Model
+struct WeekLog {
+    var year: Int
+    var month: Int
+    var weekNum: Int
+    var weekRange: String  // e.g. "04.07 - 04.13"
+    var content: String    // free-form markdown text
+
+    var monthKey: String { "\(year)年\(month)月" }
+    var weekTitle: String { "第\(weekNum)周 (\(weekRange))" }
+
+    func toDict() -> [String: Any] {
+        return [
+            "year": year,
+            "month": month,
+            "weekNum": weekNum,
+            "weekRange": weekRange,
+            "monthKey": monthKey,
+            "weekTitle": weekTitle,
+            "content": content
+        ]
+    }
+}
+
 // MARK: - Window Config
 struct WindowConfig: Codable {
     var width: Double
     var height: Double
     var x: Double?
     var y: Double?
+    var todoFile: String?
 
     static let defaultWidth: Double = 680
     static let defaultHeight: Double = 520
@@ -47,6 +73,7 @@ struct WindowConfig: Codable {
         self.height = WindowConfig.defaultHeight
         self.x = nil
         self.y = nil
+        self.todoFile = nil
     }
 }
 
@@ -188,6 +215,239 @@ class DataManager {
     }
 }
 
+// MARK: - Record Manager (Markdown file read/write)
+class RecordManager {
+    static let shared = RecordManager()
+    private(set) var weekLogs: [WeekLog] = []     // week log entries
+
+    private init() {
+        load()
+    }
+
+    var recordFilePath: String {
+        if let custom = ConfigManager.shared.windowConfig.todoFile, !custom.isEmpty {
+            return (custom as NSString).expandingTildeInPath
+        }
+        return defaultTodoFile
+    }
+
+    // MARK: - Current Week Info
+    static func currentWeekInfo() -> (year: Int, month: Int, weekNum: Int, weekRange: String) {
+        let cal = Calendar(identifier: .iso8601)
+        let now = Date()
+        let year = cal.component(.year, from: now)
+        let month = cal.component(.month, from: now)
+        let weekNum = cal.component(.weekOfYear, from: now)
+
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MM.dd"
+        if let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)) {
+            let weekEnd = cal.date(byAdding: .day, value: 6, to: weekStart)!
+            let range = "\(fmt.string(from: weekStart)) - \(fmt.string(from: weekEnd))"
+            return (year, month, weekNum, range)
+        }
+        return (year, month, weekNum, "")
+    }
+
+    // MARK: - Load from Markdown
+    func load() {
+        weekLogs = []
+
+        let path = recordFilePath
+        guard FileManager.default.fileExists(atPath: path),
+              let content = try? String(contentsOfFile: path, encoding: .utf8) else { return }
+
+        let lines = content.components(separatedBy: "\n")
+        var inWeekSection = false
+        var currentYear = 0
+        var currentMonth = 0
+        var currentWeekNum = 0
+        var currentWeekRange = ""
+        var currentWeekContent: [String] = []
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // Skip top-level title, metadata, separators, legacy sections
+            if trimmed == "# 工作记录" || trimmed.hasPrefix("<!-- ") || trimmed == "---" {
+                continue
+            }
+
+            // Skip legacy "## 待办" section content
+            if trimmed == "## 待办" {
+                if inWeekSection {
+                    saveCurrentWeek(&currentWeekContent, year: currentYear, month: currentMonth, weekNum: currentWeekNum, weekRange: currentWeekRange)
+                    inWeekSection = false
+                }
+                continue
+            }
+
+            // Section: ## 2026年4月
+            if trimmed.hasPrefix("## ") && trimmed.contains("年") && trimmed.contains("月") {
+                if inWeekSection {
+                    saveCurrentWeek(&currentWeekContent, year: currentYear, month: currentMonth, weekNum: currentWeekNum, weekRange: currentWeekRange)
+                    inWeekSection = false
+                }
+                if let parsed = parseMonthHeader(trimmed) {
+                    currentYear = parsed.year
+                    currentMonth = parsed.month
+                }
+                continue
+            }
+
+            // Week header: ### 第15周 (04.07 - 04.13)
+            if trimmed.hasPrefix("### ") && trimmed.contains("第") && trimmed.contains("周") {
+                if inWeekSection {
+                    saveCurrentWeek(&currentWeekContent, year: currentYear, month: currentMonth, weekNum: currentWeekNum, weekRange: currentWeekRange)
+                }
+                inWeekSection = true
+                currentWeekContent = []
+                if let parsed = parseWeekHeader(trimmed) {
+                    currentWeekNum = parsed.weekNum
+                    currentWeekRange = parsed.weekRange
+                }
+                continue
+            }
+
+            // Content parsing
+            if inWeekSection {
+                currentWeekContent.append(line)
+            }
+        }
+
+        // Save last week if any
+        if inWeekSection {
+            saveCurrentWeek(&currentWeekContent, year: currentYear, month: currentMonth, weekNum: currentWeekNum, weekRange: currentWeekRange)
+        }
+    }
+
+    private func saveCurrentWeek(_ lines: inout [String], year: Int, month: Int, weekNum: Int, weekRange: String) {
+        while lines.last?.trimmingCharacters(in: .whitespaces).isEmpty == true { lines.removeLast() }
+        while lines.first?.trimmingCharacters(in: .whitespaces).isEmpty == true { lines.removeFirst() }
+
+        let content = lines.joined(separator: "\n")
+        if !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || weekNum > 0 {
+            let log = WeekLog(year: year, month: month, weekNum: weekNum, weekRange: weekRange, content: content)
+            weekLogs.append(log)
+        }
+    }
+
+    private func parseMonthHeader(_ line: String) -> (year: Int, month: Int)? {
+        let cleaned = line.replacingOccurrences(of: "## ", with: "")
+        let parts = cleaned.components(separatedBy: "年")
+        guard parts.count == 2, let year = Int(parts[0].trimmingCharacters(in: .whitespaces)) else { return nil }
+        let monthStr = parts[1].replacingOccurrences(of: "月", with: "").trimmingCharacters(in: .whitespaces)
+        guard let month = Int(monthStr) else { return nil }
+        return (year, month)
+    }
+
+    private func parseWeekHeader(_ line: String) -> (weekNum: Int, weekRange: String)? {
+        let cleaned = line.replacingOccurrences(of: "### ", with: "")
+        guard let numStart = cleaned.firstIndex(of: "第"),
+              let numEnd = cleaned.firstIndex(of: "周") else { return nil }
+        let numStr = String(cleaned[cleaned.index(after: numStart)..<numEnd])
+        guard let weekNum = Int(numStr) else { return nil }
+
+        var weekRange = ""
+        if let parenStart = cleaned.firstIndex(of: "("),
+           let parenEnd = cleaned.firstIndex(of: ")") {
+            weekRange = String(cleaned[cleaned.index(after: parenStart)..<parenEnd])
+        }
+        return (weekNum, weekRange)
+    }
+
+    // MARK: - Save to Markdown
+    func save() {
+        var lines: [String] = []
+        lines.append("# 工作记录")
+        lines.append("")
+        lines.append("<!-- managed-by: clipboard-manager -->")
+        lines.append("")
+
+        // Week logs grouped by month (newest month first, newest week first)
+        let grouped = groupWeekLogsByMonth()
+        for (monthKey, logs) in grouped {
+            lines.append("## \(monthKey)")
+            lines.append("")
+            for log in logs {
+                lines.append("### \(log.weekTitle)")
+                lines.append("")
+                if log.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    lines.append("（暂无记录）")
+                } else {
+                    lines.append(log.content)
+                }
+                lines.append("")
+            }
+        }
+
+        let content = lines.joined(separator: "\n")
+        let path = recordFilePath
+
+        let dir = (path as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+
+        try? content.write(toFile: path, atomically: true, encoding: .utf8)
+    }
+
+    private func groupWeekLogsByMonth() -> [(String, [WeekLog])] {
+        var monthDict: [String: [WeekLog]] = [:]
+        var monthOrder: [String] = []
+
+        let sorted = weekLogs.sorted { a, b in
+            if a.year != b.year { return a.year > b.year }
+            return a.weekNum > b.weekNum
+        }
+
+        for log in sorted {
+            if monthDict[log.monthKey] == nil {
+                monthDict[log.monthKey] = []
+                monthOrder.append(log.monthKey)
+            }
+            monthDict[log.monthKey]!.append(log)
+        }
+
+        return monthOrder.map { key in (key, monthDict[key]!) }
+    }
+
+    // MARK: - Ensure current week exists
+    func ensureCurrentWeek() {
+        let info = RecordManager.currentWeekInfo()
+        if !weekLogs.contains(where: { $0.year == info.year && $0.weekNum == info.weekNum }) {
+            let log = WeekLog(year: info.year, month: info.month, weekNum: info.weekNum, weekRange: info.weekRange, content: "")
+            weekLogs.insert(log, at: 0)
+            save()
+        }
+    }
+
+    // MARK: - Week Log Operations
+    func updateWeekLog(year: Int, weekNum: Int, content: String) {
+        if let idx = weekLogs.firstIndex(where: { $0.year == year && $0.weekNum == weekNum }) {
+            weekLogs[idx].content = content
+            save()
+        }
+    }
+
+    func toJSON() -> String {
+        ensureCurrentWeek()
+
+        let weekLogList = weekLogs.map { $0.toDict() }
+        let info = RecordManager.currentWeekInfo()
+
+        let dict: [String: Any] = [
+            "weekLogs": weekLogList,
+            "currentWeekYear": info.year,
+            "currentWeekNum": info.weekNum,
+            "recordFile": recordFilePath
+        ]
+        if let jsonData = try? JSONSerialization.data(withJSONObject: dict),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            return jsonString
+        }
+        return "{\"weekLogs\":[],\"currentWeekYear\":0,\"currentWeekNum\":0,\"recordFile\":\"\"}"
+    }
+}
+
 // MARK: - Titlebar Drag View (manual window dragging via mouseDragged)
 class TitlebarDragView: NSView {
     private var dragStart: NSPoint?
@@ -326,6 +586,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         controller.add(self, name: "getData")
         controller.add(self, name: "useItem")
         controller.add(self, name: "openDataFile")
+        controller.add(self, name: "updateWeekLog")
+        controller.add(self, name: "getRecordData")
+        controller.add(self, name: "openRecordFile")
 
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight), configuration: config)
         webView.autoresizingMask = [.width, .height]
@@ -395,6 +658,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
             .replacingOccurrences(of: "\n", with: "\\n")
             .replacingOccurrences(of: "\r", with: "\\r")
         webView.evaluateJavaScript("refreshData('\(escaped)')", completionHandler: nil)
+    }
+
+    func refreshRecordWebView() {
+        RecordManager.shared.load()  // Reload from file in case external edits
+        let jsonStr = RecordManager.shared.toJSON()
+        let escaped = jsonStr.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+        webView.evaluateJavaScript("refreshRecordData('\(escaped)')", completionHandler: nil)
     }
 
     // MARK: - Paste to Previous App
@@ -486,6 +759,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
             } else {
                 // Open the directory if file doesn't exist yet
                 let dirURL = URL(fileURLWithPath: dataDir)
+                NSWorkspace.shared.open(dirURL)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.isOpeningFile = false
+            }
+
+        // MARK: - Record Handlers
+        case "updateWeekLog":
+            if let dict = message.body as? [String: Any],
+               let year = dict["year"] as? Int,
+               let weekNum = dict["weekNum"] as? Int,
+               let content = dict["content"] as? String {
+                RecordManager.shared.updateWeekLog(year: year, weekNum: weekNum, content: content)
+                refreshRecordWebView()
+            }
+
+        case "getRecordData":
+            refreshRecordWebView()
+
+        case "openRecordFile":
+            isOpeningFile = true
+            let recordPath = RecordManager.shared.recordFilePath
+            let fileURL = URL(fileURLWithPath: recordPath)
+            if FileManager.default.fileExists(atPath: recordPath) {
+                NSWorkspace.shared.open(fileURL)
+            } else {
+                let dirURL = URL(fileURLWithPath: (recordPath as NSString).deletingLastPathComponent)
                 NSWorkspace.shared.open(dirURL)
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in

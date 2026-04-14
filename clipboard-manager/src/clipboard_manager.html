@@ -20,6 +20,7 @@
     --yellow-dim: rgba(255, 159, 10, 0.12);
     --red: #ff3b30;
     --green: #34c759;
+    --green-dim: rgba(52, 199, 89, 0.1);
     --border: #e5e5ea;
     --border-light: #d1d1d6;
     --shadow: rgba(0, 0, 0, 0.06);
@@ -109,7 +110,7 @@ body {
 
 .tab {
     flex: 1;
-    padding: 7px 16px;
+    padding: 7px 12px;
     text-align: center;
     font-size: 13px;
     font-weight: 500;
@@ -135,7 +136,7 @@ body {
 
 .tab .count {
     display: inline-block;
-    margin-left: 6px;
+    margin-left: 4px;
     font-size: 11px;
     font-weight: 400;
     color: var(--text-muted);
@@ -273,6 +274,164 @@ body {
     border-color: rgba(255, 59, 48, 0.2);
 }
 
+/* ===== Record/Log Styles ===== */
+/* Current week editor */
+.week-editor-wrapper {
+    padding: 10px 14px;
+    border-bottom: 2px solid var(--border);
+}
+
+.week-editor-header {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.week-editor-header .badge {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--green);
+    background: var(--green-dim);
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+.week-editor {
+    width: 100%;
+    min-height: 80px;
+    max-height: 200px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    font-size: 13px;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+    color: var(--text-primary);
+    line-height: 1.6;
+    outline: none;
+    resize: vertical;
+    transition: border-color var(--transition), box-shadow var(--transition);
+    -webkit-app-region: no-drag;
+}
+
+.week-editor:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.week-editor::placeholder {
+    color: var(--text-muted);
+}
+
+/* History weeks - collapsible */
+.month-group {
+    border-bottom: 1px solid var(--border);
+}
+
+.month-header {
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    background: var(--bg-surface);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: background var(--transition);
+    -webkit-app-region: no-drag;
+    border-bottom: 1px solid var(--border);
+}
+
+.month-header:hover {
+    background: var(--bg-hover);
+}
+
+.month-header .arrow {
+    font-size: 10px;
+    color: var(--text-muted);
+    transition: transform var(--transition);
+}
+
+.month-header .arrow.expanded {
+    transform: rotate(90deg);
+}
+
+.month-content {
+    display: none;
+}
+
+.month-content.expanded {
+    display: block;
+}
+
+.week-item {
+    cursor: pointer;
+    transition: background var(--transition);
+    -webkit-app-region: no-drag;
+}
+
+.week-header {
+    padding: 8px 14px 8px 24px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+}
+
+.week-header:hover {
+    background: var(--bg-hover);
+}
+
+.week-header .arrow {
+    font-size: 10px;
+    color: var(--text-muted);
+    transition: transform var(--transition);
+}
+
+.week-header .arrow.expanded {
+    transform: rotate(90deg);
+}
+
+.week-content {
+    display: none;
+    padding: 8px 14px 8px 24px;
+    border-bottom: 1px solid var(--border);
+}
+
+.week-content.expanded {
+    display: block;
+}
+
+.week-content-text {
+    font-size: 13px;
+    color: var(--text-primary);
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.week-content-text .topic {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.week-content-empty {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
 /* ===== Empty State ===== */
 .empty-state {
     display: flex;
@@ -303,6 +462,7 @@ body {
     justify-content: flex-end;
     align-items: center;
     padding: 6px 4px 0;
+    gap: 8px;
 }
 
 .footer-btn {
@@ -329,9 +489,9 @@ body {
 <div class="titlebar"></div>
 
 <div class="container">
-    <!-- Search -->
+    <!-- Search Input -->
     <div class="search-wrapper">
-        <span class="search-icon">🔍</span>
+        <span class="search-icon" id="searchIcon">🔍</span>
         <input type="text" id="searchInput" placeholder="搜索剪切板内容..." autocomplete="off" spellcheck="false">
     </div>
 
@@ -342,6 +502,9 @@ body {
         </div>
         <div class="tab" data-tab="favorites" onclick="switchTab('favorites')">
             ⭐ 收藏 <span class="count" id="favoritesCount">0</span>
+        </div>
+        <div class="tab" data-tab="record" onclick="switchTab('record')">
+            📝 记录 <span class="count" id="recordCount">0</span>
         </div>
     </div>
 
@@ -354,21 +517,28 @@ body {
     </div>
 
     <!-- Footer -->
-    <div class="footer">
+    <div class="footer" id="footer">
         <button class="footer-btn" id="openDataFileBtn" title="查看历史数据文件">📂 数据文件</button>
     </div>
 </div>
 
 <script>
 // ===== State =====
-const TABS = ['history', 'favorites'];
+const TABS = ['history', 'favorites', 'record'];
 let currentTab = 'history';
 let selectedIndex = 0;
 let allData = { history: [], favorites: [] };
+let recordData = { weekLogs: [], currentWeekYear: 0, currentWeekNum: 0, recordFile: '' };
 let filteredItems = [];
+let expandedMonths = {};  // { "2026年4月": true }
+let expandedWeeks = {};   // { "2026-15": true }
+let weekEditorSaveTimer = null;
 
 // ===== Get current list based on tab and filter =====
 function getCurrentItems() {
+    if (currentTab === 'record') {
+        return []; // Record tab uses custom rendering
+    }
     const items = currentTab === 'history' ? allData.history : allData.favorites;
     const query = document.getElementById('searchInput').value.toLowerCase().trim();
     if (!query) return items;
@@ -377,6 +547,11 @@ function getCurrentItems() {
 
 // ===== Render list =====
 function renderList() {
+    if (currentTab === 'record') {
+        renderRecordView();
+        return;
+    }
+
     filteredItems = getCurrentItems();
     const container = document.getElementById('listContainer');
 
@@ -437,6 +612,147 @@ function renderList() {
     scrollToSelected();
 }
 
+// ===== Render Record View (Current Week Editor + History) =====
+function renderRecordView() {
+    const container = document.getElementById('listContainer');
+    const query = document.getElementById('searchInput').value.toLowerCase().trim();
+    let html = '';
+
+    // 1. Current week editor
+    const weekLogs = recordData.weekLogs || [];
+    const currentYear = recordData.currentWeekYear;
+    const currentWeekNum = recordData.currentWeekNum;
+    const currentWeekLog = weekLogs.find(w => w.year === currentYear && w.weekNum === currentWeekNum);
+    const currentWeekTitle = currentWeekLog ? currentWeekLog.weekTitle : `第${currentWeekNum}周`;
+    const currentWeekContent = currentWeekLog ? currentWeekLog.content : '';
+
+    html += '<div class="week-editor-wrapper">';
+    html += `<div class="week-editor-header">
+        <span>${currentWeekTitle}</span>
+        <span class="badge">本周</span>
+    </div>`;
+    html += `<textarea class="week-editor" id="weekEditor"
+        placeholder="记录本周工作内容...\n\n**主题名**\n- 做了什么\n  → 结果如何"
+        data-year="${currentYear}" data-week="${currentWeekNum}">${escapeHtml(currentWeekContent)}</textarea>`;
+    html += '</div>';
+
+    // 2. History weeks (excluding current week), grouped by month
+    const historyLogs = weekLogs.filter(w => !(w.year === currentYear && w.weekNum === currentWeekNum));
+
+    if (query) {
+        // Search mode: show matching weeks flat
+        const allSearchable = weekLogs; // search across all weeks including current
+        const matchingLogs = allSearchable.filter(w => w.content.toLowerCase().includes(query));
+        if (matchingLogs.length > 0) {
+            matchingLogs.forEach(log => {
+                const highlighted = highlightContent(log.content, query);
+                const isCurrent = log.year === currentYear && log.weekNum === currentWeekNum;
+                html += `<div class="week-item">
+                    <div class="week-header" style="padding-left:14px;">
+                        <span>${log.monthKey} ${log.weekTitle}${isCurrent ? ' <span style="color:var(--green);font-size:10px;">本周</span>' : ''}</span>
+                    </div>
+                    <div class="week-content expanded">
+                        <div class="week-content-text">${highlighted}</div>
+                    </div>
+                </div>`;
+            });
+        } else {
+            html += `<div class="empty-state" style="height:auto;padding:30px;">
+                <div class="empty-icon">🔍</div>
+                <div class="empty-text">没有找到匹配的记录</div>
+            </div>`;
+        }
+    } else {
+        // Group by month
+        const monthGroups = groupLogsByMonth(historyLogs);
+        monthGroups.forEach(group => {
+            const isMonthExpanded = expandedMonths[group.monthKey] || false;
+            html += `<div class="month-group">
+                <div class="month-header" data-month="${group.monthKey}">
+                    <span>${group.monthKey}</span>
+                    <span class="arrow ${isMonthExpanded ? 'expanded' : ''}">▶</span>
+                </div>
+                <div class="month-content ${isMonthExpanded ? 'expanded' : ''}">`;
+
+            group.logs.forEach(log => {
+                const weekKey = `${log.year}-${log.weekNum}`;
+                const isWeekExpanded = expandedWeeks[weekKey] || false;
+                const contentPreview = log.content.trim()
+                    ? log.content.trim().split('\n')[0].substring(0, 40) + (log.content.length > 40 ? '...' : '')
+                    : '（暂无记录）';
+
+                html += `<div class="week-item">
+                    <div class="week-header" data-year="${log.year}" data-week="${log.weekNum}">
+                        <span>${log.weekTitle} <span style="color:var(--text-muted);font-weight:400;margin-left:8px;">${escapeHtml(contentPreview)}</span></span>
+                        <span class="arrow ${isWeekExpanded ? 'expanded' : ''}">▶</span>
+                    </div>
+                    <div class="week-content ${isWeekExpanded ? 'expanded' : ''}">
+                        ${log.content.trim()
+                            ? `<div class="week-content-text">${renderMarkdownContent(log.content)}</div>`
+                            : '<div class="week-content-empty">（暂无记录）</div>'}
+                    </div>
+                </div>`;
+            });
+
+            html += '</div></div>';
+        });
+    }
+
+    container.innerHTML = html;
+
+    // Setup week editor auto-save
+    const editor = document.getElementById('weekEditor');
+    if (editor) {
+        editor.addEventListener('input', function() {
+            clearTimeout(weekEditorSaveTimer);
+            weekEditorSaveTimer = setTimeout(() => {
+                const year = parseInt(this.getAttribute('data-year'));
+                const weekNum = parseInt(this.getAttribute('data-week'));
+                const content = this.value;
+                window.webkit.messageHandlers.updateWeekLog.postMessage({
+                    year: year, weekNum: weekNum, content: content
+                });
+            }, 800);
+        });
+    }
+}
+
+function groupLogsByMonth(logs) {
+    const groups = [];
+    const monthMap = {};
+    logs.forEach(log => {
+        if (!monthMap[log.monthKey]) {
+            monthMap[log.monthKey] = [];
+            groups.push({ monthKey: log.monthKey, logs: monthMap[log.monthKey] });
+        }
+        monthMap[log.monthKey].push(log);
+    });
+    return groups;
+}
+
+function renderMarkdownContent(content) {
+    let html = escapeHtml(content);
+    // Bold: **text**
+    html = html.replace(/\*\*(.+?)\*\*/g, '<span class="topic">$1</span>');
+    // Links: https://...
+    html = html.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color:var(--accent);text-decoration:none;font-size:12px;" title="$1">🔗 链接</a>');
+    return html;
+}
+
+function highlightContent(content, query) {
+    let html = escapeHtml(content);
+    if (query) {
+        const regex = new RegExp(`(${escapeRegex(query)})`, 'gi');
+        html = html.replace(regex, '<mark style="background:var(--yellow-dim);color:var(--text-primary);padding:1px 2px;border-radius:2px;">$1</mark>');
+    }
+    html = html.replace(/\*\*(.+?)\*\*/g, '<span class="topic">$1</span>');
+    return html;
+}
+
+function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // ===== Scroll to keep selected item visible =====
 function scrollToSelected() {
     const container = document.getElementById('listContainer');
@@ -459,7 +775,14 @@ function switchTab(tab) {
     document.querySelectorAll('.tab').forEach(t => {
         t.classList.toggle('active', t.dataset.tab === tab);
     });
-    renderList();
+    updateInputMode();
+    updateFooter();
+
+    if (tab === 'record') {
+        window.webkit.messageHandlers.getRecordData.postMessage(null);
+    } else {
+        renderList();
+    }
 }
 
 function switchToNextTab(direction) {
@@ -467,6 +790,36 @@ function switchToNextTab(direction) {
     const nextIdx = currentIdx + direction;
     if (nextIdx >= 0 && nextIdx < TABS.length) {
         switchTab(TABS[nextIdx]);
+    }
+}
+
+function updateInputMode() {
+    const input = document.getElementById('searchInput');
+    const icon = document.getElementById('searchIcon');
+    if (currentTab === 'record') {
+        input.placeholder = '搜索记录...';
+        icon.textContent = '🔍';
+    } else {
+        input.placeholder = '搜索剪切板内容...';
+        icon.textContent = '🔍';
+    }
+    input.value = '';
+}
+
+function updateFooter() {
+    const footer = document.getElementById('footer');
+    if (currentTab === 'record') {
+        footer.innerHTML = `
+            <button class="footer-btn" id="openRecordFileBtn" title="查看记录文件">📝 记录文件</button>
+        `;
+        document.getElementById('openRecordFileBtn').addEventListener('click', function() {
+            window.webkit.messageHandlers.openRecordFile.postMessage(null);
+        });
+    } else {
+        footer.innerHTML = '<button class="footer-btn" id="openDataFileBtn" title="查看历史数据文件">📂 数据文件</button>';
+        document.getElementById('openDataFileBtn').addEventListener('click', function() {
+            window.webkit.messageHandlers.openDataFile.postMessage(null);
+        });
     }
 }
 
@@ -521,6 +874,11 @@ function updateCounts() {
     document.getElementById('favoritesCount').textContent = allData.favorites.length;
 }
 
+function updateRecordCounts() {
+    const weekLogs = (recordData.weekLogs || []).filter(w => w.content && w.content.trim().length > 0);
+    document.getElementById('recordCount').textContent = weekLogs.length;
+}
+
 // ===== API called from Swift =====
 function refreshData(jsonStr) {
     try {
@@ -530,7 +888,28 @@ function refreshData(jsonStr) {
         return;
     }
     updateCounts();
-    renderList();
+    if (currentTab !== 'record') {
+        renderList();
+    }
+}
+
+function refreshRecordData(jsonStr) {
+    try {
+        recordData = JSON.parse(jsonStr);
+    } catch(e) {
+        console.error('Failed to parse record data:', e);
+        return;
+    }
+    updateRecordCounts();
+    updateFooter();
+    if (currentTab === 'record') {
+        // Preserve editor content if user is typing
+        const editor = document.getElementById('weekEditor');
+        if (editor && document.activeElement === editor) {
+            return;
+        }
+        renderRecordView();
+    }
 }
 
 function focusSearch() {
@@ -546,17 +925,30 @@ document.addEventListener('keydown', function(e) {
     // ESC - hide window
     if (e.key === 'Escape') {
         e.preventDefault();
+        // If in week editor, blur it first
+        const editor = document.getElementById('weekEditor');
+        if (editor && document.activeElement === editor) {
+            editor.blur();
+            document.getElementById('searchInput').focus();
+            return;
+        }
         window.webkit.messageHandlers.hideWindow.postMessage(null);
         return;
+    }
+
+    // Don't handle other shortcuts if in week editor
+    const weekEditor = document.getElementById('weekEditor');
+    if (weekEditor && document.activeElement === weekEditor) {
+        return; // Let textarea handle all its own input
     }
 
     // Tab key (without Cmd) - switch tabs
     if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         if (e.shiftKey) {
-            switchToNextTab(-1); // Shift+Tab = previous tab
+            switchToNextTab(-1);
         } else {
-            switchToNextTab(1);  // Tab = next tab
+            switchToNextTab(1);
         }
         return;
     }
@@ -569,8 +961,8 @@ document.addEventListener('keydown', function(e) {
         return;
     }
 
-    // Cmd+S - toggle favorite
-    if (e.key === 's' && e.metaKey && !e.shiftKey) {
+    // Cmd+S - toggle favorite (clipboard tabs only)
+    if (e.key === 's' && e.metaKey && !e.shiftKey && currentTab !== 'record') {
         e.preventDefault();
         const item = filteredItems[selectedIndex];
         if (item) toggleFav(item.id);
@@ -580,7 +972,7 @@ document.addEventListener('keydown', function(e) {
     // Arrow Up
     if (e.key === 'ArrowUp') {
         e.preventDefault();
-        if (filteredItems.length > 0) {
+        if (currentTab !== 'record' && filteredItems.length > 0) {
             selectedIndex = Math.max(0, selectedIndex - 1);
             renderList();
         }
@@ -590,25 +982,23 @@ document.addEventListener('keydown', function(e) {
     // Arrow Down
     if (e.key === 'ArrowDown') {
         e.preventDefault();
-        if (filteredItems.length > 0) {
+        if (currentTab !== 'record' && filteredItems.length > 0) {
             selectedIndex = Math.min(filteredItems.length - 1, selectedIndex + 1);
             renderList();
         }
         return;
     }
 
-    // Arrow Left / Right - switch tabs (only when search input is empty or cursor at boundary)
+    // Arrow Left / Right - switch tabs
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         const input = document.getElementById('searchInput');
         const isInSearch = document.activeElement === input;
 
         if (isInSearch) {
-            // In search input: only allow tab switch when input is empty
             if (input.value.length === 0) {
                 e.preventDefault();
                 switchToNextTab(e.key === 'ArrowLeft' ? -1 : 1);
             }
-            // Otherwise let left/right work normally in the input
         } else {
             e.preventDefault();
             switchToNextTab(e.key === 'ArrowLeft' ? -1 : 1);
@@ -616,20 +1006,24 @@ document.addEventListener('keydown', function(e) {
         return;
     }
 
-    // Enter - paste selected item
+    // Enter - paste selected item (clipboard tabs only)
     if (e.key === 'Enter') {
-        e.preventDefault();
-        if (filteredItems.length > 0) {
-            pasteItem(selectedIndex);
+        if (currentTab !== 'record') {
+            e.preventDefault();
+            if (filteredItems.length > 0) {
+                pasteItem(selectedIndex);
+            }
         }
         return;
     }
 
-    // Delete/Backspace with Cmd - delete item
+    // Delete/Backspace with Cmd
     if ((e.key === 'Delete' || e.key === 'Backspace') && e.metaKey) {
         e.preventDefault();
-        const item = filteredItems[selectedIndex];
-        if (item) deleteItem(item.id);
+        if (currentTab !== 'record') {
+            const item = filteredItems[selectedIndex];
+            if (item) deleteItem(item.id);
+        }
         return;
     }
 });
@@ -650,16 +1044,34 @@ document.getElementById('searchInput').addEventListener('input', function() {
 // Request initial data
 window.addEventListener('load', function() {
     window.webkit.messageHandlers.getData.postMessage(null);
-});
-
-// Open data file button
-document.getElementById('openDataFileBtn').addEventListener('click', function() {
-    window.webkit.messageHandlers.openDataFile.postMessage(null);
+    window.webkit.messageHandlers.getRecordData.postMessage(null);
 });
 
 // ===== Event Delegation for list items =====
 document.getElementById('listContainer').addEventListener('click', function(e) {
-    // Check if clicked on an action button (or child of it)
+    // Month header toggle
+    const monthHeader = e.target.closest('.month-header');
+    if (monthHeader) {
+        const monthKey = monthHeader.getAttribute('data-month');
+        expandedMonths[monthKey] = !expandedMonths[monthKey];
+        renderRecordView();
+        return;
+    }
+
+    // Week header toggle
+    const weekHeader = e.target.closest('.week-header');
+    if (weekHeader) {
+        const year = weekHeader.getAttribute('data-year');
+        const week = weekHeader.getAttribute('data-week');
+        if (year && week) {
+            const weekKey = `${year}-${week}`;
+            expandedWeeks[weekKey] = !expandedWeeks[weekKey];
+            renderRecordView();
+        }
+        return;
+    }
+
+    // Clipboard action buttons
     const actionBtn = e.target.closest('[data-action="toggleFav"], [data-action="delete"]');
     if (actionBtn) {
         e.stopPropagation();
@@ -672,7 +1084,7 @@ document.getElementById('listContainer').addEventListener('click', function(e) {
         return;
     }
 
-    // Check if clicked on an item row (paste action)
+    // Clipboard item row (paste action)
     const itemEl = e.target.closest('.item[data-action="paste"]');
     if (itemEl) {
         const index = parseInt(itemEl.getAttribute('data-index'), 10);
@@ -681,12 +1093,14 @@ document.getElementById('listContainer').addEventListener('click', function(e) {
 });
 
 document.getElementById('listContainer').addEventListener('mouseover', function(e) {
-    const itemEl = e.target.closest('.item[data-index]');
-    if (itemEl) {
-        const index = parseInt(itemEl.getAttribute('data-index'), 10);
-        if (index !== selectedIndex) {
-            selectedIndex = index;
-            renderList();
+    if (currentTab !== 'record') {
+        const clipItem = e.target.closest('.item[data-index]');
+        if (clipItem) {
+            const index = parseInt(clipItem.getAttribute('data-index'), 10);
+            if (index !== selectedIndex) {
+                selectedIndex = index;
+                renderList();
+            }
         }
     }
 });
