@@ -1,0 +1,1453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coding Tool</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f7f8fa;
+            --bg-surface: #ffffff;
+            --bg-hover: #eef0f4;
+            --bg-input: #fafbfc;
+            --text-primary: #1d2433;
+            --text-secondary: #5a6070;
+            --text-muted: #9ca3b0;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --green: #16a34a;
+            --red: #dc2626;
+            --yellow: #ca8a04;
+            --peach: #ea580c;
+            --border: #e2e5ea;
+            --border-light: #eef0f4;
+            --scrollbar-bg: #f3f4f6;
+            --scrollbar-thumb: #cbd5e1;
+            --key-color: #2563eb;
+            --string-color: #16a34a;
+            --number-color: #ea580c;
+            --bool-color: #9333ea;
+            --null-color: #dc2626;
+            --bracket-color: #64748b;
+            --error-bg: #fef2f2;
+            --error-border: #dc2626;
+            --error-text: #dc2626;
+            --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+            --shadow-md: 0 4px 6px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03);
+            --search-highlight: #fef08a;
+            --search-current: #fb923c;
+            --fold-color: #94a3b8;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ===== Top Tab Bar ===== */
+        .tab-bar {
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border);
+            -webkit-app-region: drag;
+            user-select: none;
+            z-index: 20;
+            gap: 0;
+        }
+        .tab-bar-logo {
+            display: flex; align-items: center; gap: 8px;
+            padding: 10px 16px 10px 4px;
+        }
+        .tab-bar-logo .logo {
+            width: 26px; height: 26px; background: var(--accent); border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            color: #fff; font-size: 12px; font-weight: 700; font-family: 'SF Mono', monospace;
+        }
+        .tab-bar-logo .title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+        .tab-item {
+            -webkit-app-region: no-drag;
+            padding: 10px 18px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.15s ease;
+            position: relative;
+        }
+        .tab-item:hover { color: var(--text-secondary); }
+        .tab-item.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+            font-weight: 600;
+        }
+        .tab-spacer { flex: 1; }
+
+        /* ===== Tab Pages ===== */
+        .tab-page {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .tab-page.active {
+            display: flex;
+        }
+
+        /* ==================== JSON Formatter Styles ==================== */
+        .jf-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 20px;
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border);
+            z-index: 10;
+        }
+        .jf-header-left { display: flex; align-items: center; gap: 10px; }
+        .jf-header-right { display: flex; gap: 6px; }
+        .header-btn {
+            padding: 5px 12px; border: 1px solid var(--border); background: var(--bg-primary);
+            color: var(--text-secondary); border-radius: 6px; font-size: 12px; cursor: pointer;
+            transition: all 0.15s ease; display: flex; align-items: center; gap: 4px;
+        }
+        .header-btn:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--accent); }
+
+        /* Search Bar */
+        .search-bar {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border);
+            z-index: 9;
+        }
+        .search-bar.visible { display: flex; }
+        .search-bar input {
+            flex: 1; padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px;
+            font-size: 13px; outline: none; background: var(--bg-input); color: var(--text-primary);
+            font-family: 'SF Mono', 'Consolas', monospace;
+        }
+        .search-bar input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+        .search-info { font-size: 12px; color: var(--text-muted); min-width: 80px; text-align: center; }
+        .search-btn {
+            padding: 4px 8px; border: 1px solid var(--border); background: var(--bg-primary);
+            color: var(--text-secondary); border-radius: 5px; font-size: 12px; cursor: pointer;
+            transition: all 0.15s;
+        }
+        .search-btn:hover { background: var(--bg-hover); border-color: var(--accent); }
+        .search-divider { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }
+        .search-copy-btn { font-size: 11px; padding: 4px 10px; white-space: nowrap; }
+        .search-copy-btn:disabled { opacity: 0.4; cursor: default; }
+        .search-copy-btn:disabled:hover { background: var(--bg-primary); border-color: var(--border); }
+
+        /* Main Layout */
+        .jf-main {
+            flex: 1; display: flex; overflow: hidden;
+            padding: 12px; gap: 12px; background: var(--bg-secondary);
+        }
+        .panel {
+            flex: 1; display: flex; flex-direction: column; min-width: 0;
+            background: var(--bg-primary); border-radius: 10px;
+            border: 1px solid var(--border); box-shadow: var(--shadow); overflow: hidden;
+        }
+        .divider {
+            width: 6px; flex-shrink: 0; cursor: col-resize;
+            display: flex; align-items: center; justify-content: center; position: relative;
+        }
+        .divider::after {
+            content: ''; width: 3px; height: 32px; border-radius: 2px;
+            background: var(--scrollbar-thumb); transition: background 0.15s;
+        }
+        .divider:hover::after { background: var(--accent); }
+
+        .panel-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 14px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-light);
+        }
+        .panel-title {
+            font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px;
+            color: var(--text-muted); display: flex; align-items: center; gap: 6px;
+        }
+        .panel-title .dot { width: 6px; height: 6px; border-radius: 50%; }
+        .dot.input { background: var(--accent); }
+        .dot.output { background: var(--green); }
+        .dot.error { background: var(--red); }
+        .panel-actions { display: flex; gap: 4px; align-items: center; }
+        .panel-badge {
+            font-size: 10px; padding: 2px 8px; border-radius: 10px;
+            background: var(--bg-primary); color: var(--text-muted); border: 1px solid var(--border-light);
+        }
+        .panel-icon-btn {
+            width: 24px; height: 24px; border: 1px solid var(--border-light); background: var(--bg-primary);
+            border-radius: 5px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+            font-size: 12px; color: var(--text-muted); transition: all 0.15s;
+        }
+        .panel-icon-btn:hover { background: var(--bg-hover); color: var(--accent); border-color: var(--accent); }
+
+        .input-wrapper { flex: 1; position: relative; overflow: hidden; }
+        #inputBackdrop {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            padding: 14px; overflow: auto;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 13px; line-height: 1.65; tab-size: 2;
+            white-space: pre-wrap; word-wrap: break-word;
+            color: transparent; pointer-events: none; z-index: 0;
+            background: var(--bg-input);
+        }
+        #inputBackdrop .search-match { background: var(--search-highlight); border-radius: 2px; color: transparent; }
+        #inputBackdrop .search-match.current { background: var(--search-current); color: transparent; }
+        #jsonInput {
+            position: relative; z-index: 1;
+            width: 100%; height: 100%;
+            padding: 14px; background: transparent; color: var(--text-primary);
+            border: none; resize: none;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 13px; line-height: 1.65; outline: none; tab-size: 2; overflow: auto;
+        }
+        #jsonInput::placeholder { color: var(--text-muted); }
+        #jsonInput::-webkit-scrollbar, .output-area::-webkit-scrollbar { width: 6px; }
+        #jsonInput::-webkit-scrollbar-track, .output-area::-webkit-scrollbar-track { background: transparent; }
+        #jsonInput::-webkit-scrollbar-thumb, .output-area::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+
+        .action-bar {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 14px; background: var(--bg-secondary); border-top: 1px solid var(--border-light);
+        }
+        .action-bar-left { display: flex; gap: 8px; align-items: center; }
+        .format-btn {
+            padding: 6px 20px; background: var(--accent); color: #fff; border: none;
+            border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s ease;
+        }
+        .format-btn:hover { background: var(--accent-hover); box-shadow: 0 2px 8px rgba(59,130,246,0.25); }
+        .format-btn:active { transform: scale(0.97); }
+        .indent-select {
+            padding: 5px 10px; background: var(--bg-primary); color: var(--text-secondary);
+            border: 1px solid var(--border); border-radius: 6px; font-size: 12px; cursor: pointer; outline: none;
+        }
+        .indent-select:focus { border-color: var(--accent); }
+        .char-count { font-size: 11px; color: var(--text-muted); }
+        kbd {
+            font-family: 'SF Mono', monospace; font-size: 10px; padding: 1px 5px;
+            border: 1px solid var(--border); border-radius: 3px; background: var(--bg-secondary); color: var(--text-muted);
+        }
+
+        .output-wrapper { display: flex; flex: 1; overflow: hidden; }
+        .output-gutter {
+            min-width: 40px; padding: 14px 8px; text-align: right; color: var(--text-muted);
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 12px; line-height: 1.65; user-select: none;
+            background: var(--bg-secondary); border-right: 1px solid var(--border-light); overflow: hidden;
+        }
+        .output-gutter .line-num { display: block; }
+        .output-gutter .line-num.error-line { color: var(--red); font-weight: 700; }
+        .output-area { flex: 1; overflow: auto; background: var(--bg-input); }
+        #jsonOutput {
+            padding: 14px;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 13px; line-height: 1.65; white-space: pre; min-height: 100%;
+        }
+        .placeholder-text { color: var(--text-muted); font-style: italic; padding: 14px; font-size: 13px; }
+
+        .json-key { color: var(--key-color); }
+        .json-string { color: var(--string-color); }
+        .json-number { color: var(--number-color); }
+        .json-boolean { color: var(--bool-color); }
+        .json-null { color: var(--null-color); }
+        .json-bracket { color: var(--bracket-color); }
+        .json-colon { color: var(--text-muted); }
+        .json-comma { color: var(--text-muted); }
+
+        .fold-toggle {
+            display: inline-block; cursor: pointer; user-select: none;
+            color: var(--fold-color); font-size: 11px; width: 14px; text-align: center;
+            margin-right: 2px; transition: transform 0.15s, color 0.15s;
+            vertical-align: middle; font-family: 'SF Mono', monospace; line-height: 1;
+        }
+        .fold-toggle:hover { color: var(--accent); }
+        .fold-toggle.collapsed { transform: rotate(-90deg); }
+        .fold-content.collapsed { display: none; }
+        .fold-placeholder {
+            color: var(--text-muted); font-style: italic; cursor: pointer;
+            background: var(--bg-hover); border-radius: 3px; padding: 0 6px; font-size: 12px;
+        }
+        .fold-placeholder:hover { background: var(--accent); color: #fff; }
+
+        .search-match { background: var(--search-highlight); border-radius: 2px; padding: 0 1px; }
+        .search-match.current { background: var(--search-current); color: #fff; }
+
+        .json-error-line {
+            background: var(--error-bg); border-left: 3px solid var(--error-border);
+            display: inline-block; width: 100%; padding: 0 4px; margin-left: -4px; border-radius: 2px;
+        }
+        .json-error-char {
+            color: var(--error-text); text-decoration: wavy underline;
+            text-decoration-color: var(--error-text); font-weight: 700;
+        }
+        .error-indicator {
+            display: none; align-items: center; gap: 8px; padding: 8px 14px;
+            background: var(--error-bg); border-bottom: 1px solid rgba(220,38,38,0.15);
+            font-size: 12px; color: var(--error-text);
+        }
+        .error-indicator.visible { display: flex; }
+        .error-indicator .error-icon { font-size: 14px; }
+        .error-indicator .error-msg { flex: 1; }
+        .error-indicator .error-pos {
+            font-family: 'SF Mono', monospace; font-size: 11px;
+            background: rgba(220,38,38,0.08); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(220,38,38,0.15);
+        }
+
+        /* Status Bar */
+        .status-bar {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 4px 16px; background: var(--bg-primary); border-top: 1px solid var(--border);
+            font-size: 11px; color: var(--text-muted);
+        }
+        .status-item { display: flex; align-items: center; gap: 5px; }
+        .status-dot { width: 5px; height: 5px; border-radius: 50%; }
+        .status-dot.valid { background: var(--green); }
+        .status-dot.invalid { background: var(--red); }
+        .status-dot.empty { background: var(--text-muted); }
+
+        /* Toast */
+        .toast {
+            position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%) translateY(20px);
+            padding: 8px 20px; background: var(--text-primary); color: #fff; border-radius: 8px;
+            font-size: 13px; opacity: 0; transition: all 0.25s ease; pointer-events: none;
+            box-shadow: var(--shadow-md); z-index: 100;
+        }
+        .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        /* ==================== Timestamp Converter Styles ==================== */
+        .ts-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+            gap: 20px;
+            overflow-y: auto;
+            background: var(--bg-secondary);
+        }
+        .ts-card {
+            background: var(--bg-primary);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            padding: 20px 24px;
+        }
+        .ts-card-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .ts-card-title .icon {
+            font-size: 16px;
+        }
+
+        /* Current Timestamp */
+        .ts-current {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .ts-current-value {
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: 1px;
+            min-width: 200px;
+        }
+        .ts-current-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .ts-btn {
+            padding: 6px 14px;
+            border: 1px solid var(--border);
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+            border-radius: 7px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .ts-btn:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--accent); }
+        .ts-btn.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .ts-btn.primary {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .ts-btn.primary:hover {
+            background: var(--accent-hover);
+        }
+        .ts-current-datetime {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-top: 10px;
+            font-family: 'SF Mono', monospace;
+        }
+
+        /* Converter rows */
+        .ts-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .ts-input-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+            min-width: 200px;
+        }
+        .ts-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            outline: none;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            transition: border-color 0.15s;
+        }
+        .ts-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(59,130,246,0.12);
+        }
+        .ts-input::placeholder { color: var(--text-muted); }
+        .ts-arrow {
+            font-size: 18px;
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+        .ts-result {
+            flex: 1;
+            min-width: 200px;
+            padding: 8px 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 14px;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 38px;
+        }
+        .ts-result-text {
+            flex: 1;
+            word-break: break-all;
+        }
+        .ts-result-text.placeholder {
+            color: var(--text-muted);
+            font-style: italic;
+        }
+        .ts-copy-btn {
+            padding: 2px 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-primary);
+            color: var(--text-muted);
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.15s;
+            flex-shrink: 0;
+            margin-left: 8px;
+        }
+        .ts-copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+        /* Unit select */
+        .ts-unit-select {
+            padding: 8px 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 13px;
+            outline: none;
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+        .ts-unit-select:focus { border-color: var(--accent); }
+
+        /* Responsive */
+        @media (max-width: 700px) {
+            .ts-row { flex-direction: column; align-items: stretch; }
+            .ts-arrow { text-align: center; transform: rotate(90deg); }
+        }
+    </style>
+</head>
+<body>
+    <!-- ===== Top Tab Bar ===== -->
+    <div class="tab-bar">
+        <div class="tab-bar-logo">
+            <span class="logo">CT</span>
+            <span class="title">Coding Tool</span>
+        </div>
+        <div class="tab-item active" data-tab="json" onclick="switchTab('json')">{ } JSON 格式化</div>
+        <div class="tab-item" data-tab="timestamp" onclick="switchTab('timestamp')">🕐 时间戳转换</div>
+        <div class="tab-spacer"></div>
+    </div>
+
+    <!-- ===== JSON Formatter Page ===== -->
+    <div class="tab-page active" id="page-json">
+        <div class="jf-header">
+            <div class="jf-header-left">
+                <button class="header-btn" onclick="jf_copyOutput()">📄 复制</button>
+                <button class="header-btn" onclick="jf_formatJSON()">✨ 格式化</button>
+                <button class="header-btn" onclick="jf_minifyJSON()">📦 删除空格</button>
+                <button class="header-btn" onclick="jf_minifyAndEscape()">🔒 删除空格并转义</button>
+                <button class="header-btn" onclick="jf_unescape()">🔓 去除转义</button>
+            </div>
+            <div class="jf-header-right">
+                <button class="header-btn" onclick="jf_loadSample()">📋 示例</button>
+                <button class="header-btn" onclick="jf_clearAll()">🗑 清空</button>
+            </div>
+        </div>
+
+        <div class="search-bar" id="searchBar">
+            <span style="font-size:13px;">🔍</span>
+            <input type="text" id="searchInput" placeholder="搜索..." autocomplete="off" />
+            <span class="search-info" id="searchInfo"></span>
+            <button class="search-btn" onclick="jf_searchPrev()">▲</button>
+            <button class="search-btn" onclick="jf_searchNext()">▼</button>
+            <span class="search-divider"></span>
+            <button class="search-btn search-copy-btn" id="copyValuesBtn" onclick="jf_copyMatchedValues()" title="复制所有匹配的值">📋 复制值</button>
+            <button class="search-btn search-copy-btn" id="copyPairsBtn" onclick="jf_copyMatchedPairs()" title="复制所有匹配的键值对">📋 复制键值</button>
+            <button class="search-btn" onclick="jf_closeSearch()">✕</button>
+        </div>
+
+        <div class="jf-main">
+            <div class="panel" id="leftPanel">
+                <div class="panel-header">
+                    <span class="panel-title"><span class="dot input"></span>输入</span>
+                    <span class="panel-badge" id="inputSize">0 chars</span>
+                </div>
+                <div class="input-wrapper">
+                    <div id="inputBackdrop"></div>
+                    <textarea id="jsonInput" placeholder="在此粘贴 JSON 字符串...&#10;&#10;支持：&#10;  • 标准 JSON&#10;  • 压缩的 JSON&#10;&#10;快捷键：&#10;  ⌘+Enter  格式化&#10;  ⌘+F  搜索&#10;  ESC  关闭窗口" spellcheck="false"></textarea>
+                </div>
+                <div class="action-bar">
+                    <div class="action-bar-left">
+                        <button class="format-btn" onclick="jf_formatJSON()">▶ 格式化</button>
+                        <select class="indent-select" id="indentSize">
+                            <option value="2">2 空格</option>
+                            <option value="4">4 空格</option>
+                            <option value="tab">Tab</option>
+                        </select>
+                    </div>
+                    <span class="char-count"><kbd>⌘</kbd>+<kbd>Enter</kbd> 格式化 &nbsp; <kbd>ESC</kbd> 关闭</span>
+                </div>
+            </div>
+
+            <div class="divider" id="divider"></div>
+
+            <div class="panel" id="rightPanel">
+                <div class="panel-header">
+                    <span class="panel-title" id="outputTitle"><span class="dot output"></span>输出</span>
+                    <div class="panel-actions">
+                        <button class="panel-icon-btn" onclick="jf_expandAll()" title="全部展开">⊞</button>
+                        <button class="panel-icon-btn" onclick="jf_collapseAll()" title="全部折叠">⊟</button>
+                        <span class="panel-badge" id="outputSize">0 lines</span>
+                    </div>
+                </div>
+                <div class="error-indicator" id="errorIndicator">
+                    <span class="error-icon">⚠️</span>
+                    <span class="error-msg" id="errorMsg">JSON 格式错误</span>
+                    <span class="error-pos" id="errorPos"></span>
+                </div>
+                <div class="output-wrapper">
+                    <div class="output-gutter" id="outputGutter"></div>
+                    <div class="output-area" id="outputArea">
+                        <div id="jsonOutput" class="placeholder-text">格式化结果将显示在此处...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="status-bar" id="jf-status-bar">
+            <span class="status-item">
+                <span class="status-dot empty" id="statusDot"></span>
+                <span id="statusText">等待输入</span>
+            </span>
+            <span><kbd>Tab</kbd> 切换 &nbsp; <kbd>⌘F</kbd> 搜索 &nbsp; <kbd>ESC</kbd> 关闭</span>
+        </div>
+    </div>
+
+    <!-- ===== Timestamp Converter Page ===== -->
+    <div class="tab-page" id="page-timestamp">
+        <div class="ts-container">
+            <!-- Current Timestamp -->
+            <div class="ts-card">
+                <div class="ts-card-title"><span class="icon">⏱</span> 当前时间戳</div>
+                <div class="ts-current">
+                    <div class="ts-current-value" id="tsCurrentValue">0</div>
+                    <div class="ts-current-actions">
+                        <button class="ts-btn active" id="tsBtnSec" onclick="tsSetUnit('sec')">秒 (s)</button>
+                        <button class="ts-btn" id="tsBtnMs" onclick="tsSetUnit('ms')">毫秒 (ms)</button>
+                        <button class="ts-btn" onclick="tsCopyCurrent()">📋 复制</button>
+                    </div>
+                </div>
+                <div class="ts-current-datetime" id="tsCurrentDatetime"></div>
+            </div>
+
+            <!-- Timestamp → Datetime -->
+            <div class="ts-card">
+                <div class="ts-card-title"><span class="icon">🔄</span> 时间戳 → 日期时间</div>
+                <div class="ts-row">
+                    <div class="ts-input-group">
+                        <input type="text" class="ts-input" id="tsToDateInput" placeholder="输入时间戳，如 1713081600" />
+                        <select class="ts-unit-select" id="tsToDateUnit">
+                            <option value="auto">自动</option>
+                            <option value="sec">秒</option>
+                            <option value="ms">毫秒</option>
+                        </select>
+                    </div>
+                    <button class="ts-btn primary" onclick="tsToDate()">转换 →</button>
+                    <div class="ts-result" id="tsToDateResult">
+                        <span class="ts-result-text placeholder">转换结果</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Datetime → Timestamp -->
+            <div class="ts-card">
+                <div class="ts-card-title"><span class="icon">🔄</span> 日期时间 → 时间戳</div>
+                <div class="ts-row">
+                    <div class="ts-input-group">
+                        <input type="text" class="ts-input" id="tsToStampInput" placeholder="如 2026-04-14 15:00:00" />
+                    </div>
+                    <button class="ts-btn primary" onclick="tsToStamp()">转换 →</button>
+                    <div class="ts-result" id="tsToStampResult">
+                        <span class="ts-result-text placeholder">转换结果</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="status-bar">
+            <span class="status-item">
+                <span class="status-dot valid"></span>
+                <span>时间戳工具就绪</span>
+            </span>
+            <span><kbd>Tab</kbd> 切换 &nbsp; <kbd>ESC</kbd> 关闭</span>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // ==================== Tab Switching ====================
+        let currentTab = 'json';
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab-item').forEach(el => {
+                el.classList.toggle('active', el.dataset.tab === tab);
+            });
+            document.querySelectorAll('.tab-page').forEach(el => {
+                el.classList.toggle('active', el.id === 'page-' + tab);
+            });
+            if (tab === 'json') {
+                document.getElementById('jsonInput').focus();
+            } else if (tab === 'timestamp') {
+                document.getElementById('tsToDateInput').focus();
+            }
+        }
+
+        // ==================== JSON Formatter ====================
+        const jsonInput = document.getElementById('jsonInput');
+        const inputBackdrop = document.getElementById('inputBackdrop');
+        const jsonOutput = document.getElementById('jsonOutput');
+        const outputArea = document.getElementById('outputArea');
+        const outputGutter = document.getElementById('outputGutter');
+        const errorIndicator = document.getElementById('errorIndicator');
+        const errorMsg = document.getElementById('errorMsg');
+        const errorPos = document.getElementById('errorPos');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const outputTitle = document.getElementById('outputTitle');
+        const inputSizeEl = document.getElementById('inputSize');
+        const outputSizeEl = document.getElementById('outputSize');
+        const searchBar = document.getElementById('searchBar');
+        const searchInput = document.getElementById('searchInput');
+        const searchInfo = document.getElementById('searchInfo');
+        let lastFormattedText = '';
+        let lastParsedData = null;
+        let isValidJSON = false;
+        let searchMatches = [];
+        let searchCurrentIdx = -1;
+
+        outputArea.addEventListener('scroll', () => { outputGutter.scrollTop = outputArea.scrollTop; });
+        jsonInput.addEventListener('scroll', () => {
+            inputBackdrop.scrollTop = jsonInput.scrollTop;
+            inputBackdrop.scrollLeft = jsonInput.scrollLeft;
+        });
+        jsonInput.addEventListener('input', () => {
+            const len = jsonInput.value.length;
+            inputSizeEl.textContent = len > 1000 ? `${(len/1000).toFixed(1)}k chars` : `${len} chars`;
+            if (searchBar.classList.contains('visible') && searchInput.value.trim()) {
+                jf_highlightInputBackdrop(searchInput.value.trim());
+            }
+        });
+
+        function jf_formatJSON() {
+            const input = jsonInput.value.trim();
+            if (!input) { showToast('请输入 JSON 字符串'); return; }
+            const indent = jf_getIndent();
+            try {
+                const parsed = JSON.parse(input);
+                lastParsedData = parsed;
+                isValidJSON = true;
+                const html = jf_renderJSONTree(parsed, indent);
+                jf_displayTreeSuccess(html);
+            } catch (e) {
+                isValidJSON = false;
+                lastParsedData = null;
+                jf_handleParseError(input, e, indent);
+            }
+        }
+
+        function jf_getIndent() {
+            const val = document.getElementById('indentSize').value;
+            return val === 'tab' ? '\t' : parseInt(val);
+        }
+
+        let foldIdCounter = 0;
+        function jf_renderJSONTree(data, indent) {
+            foldIdCounter = 0;
+            const indentStr = indent === '\t' ? '\t' : ' '.repeat(typeof indent === 'number' ? indent : 2);
+            const lines = [];
+            jf_renderValue(data, lines, 0, indentStr, false);
+            lastFormattedText = lines.map(l => l.text).join('\n');
+            return jf_buildTreeHTML(lines);
+        }
+
+        function jf_renderValue(value, lines, depth, indentStr, trailingComma) {
+            const comma = trailingComma ? ',' : '';
+            if (value === null) {
+                lines.push({ text: indentStr.repeat(depth) + 'null' + comma, html: jf_indent(depth, indentStr) + '<span class="json-null">null</span>' + jf_commaSpan(comma), foldStart: false });
+            } else if (typeof value === 'boolean') {
+                lines.push({ text: indentStr.repeat(depth) + String(value) + comma, html: jf_indent(depth, indentStr) + '<span class="json-boolean">' + value + '</span>' + jf_commaSpan(comma), foldStart: false });
+            } else if (typeof value === 'number') {
+                lines.push({ text: indentStr.repeat(depth) + String(value) + comma, html: jf_indent(depth, indentStr) + '<span class="json-number">' + value + '</span>' + jf_commaSpan(comma), foldStart: false });
+            } else if (typeof value === 'string') {
+                const escaped = escapeHtml(JSON.stringify(value));
+                lines.push({ text: indentStr.repeat(depth) + JSON.stringify(value) + comma, html: jf_indent(depth, indentStr) + '<span class="json-string">' + escaped + '</span>' + jf_commaSpan(comma), foldStart: false });
+            } else if (Array.isArray(value)) {
+                jf_renderArray(value, lines, depth, indentStr, comma);
+            } else if (typeof value === 'object') {
+                jf_renderObject(value, lines, depth, indentStr, comma);
+            }
+        }
+
+        function jf_renderObject(obj, lines, depth, indentStr, comma) {
+            const keys = Object.keys(obj);
+            if (keys.length === 0) {
+                lines.push({ text: indentStr.repeat(depth) + '{}' + comma, html: jf_indent(depth, indentStr) + '<span class="json-bracket">{}</span>' + jf_commaSpan(comma), foldStart: false });
+                return;
+            }
+            const foldId = 'fold_' + (foldIdCounter++);
+            const preview = jf_getObjectPreview(obj);
+            lines.push({
+                text: indentStr.repeat(depth) + '{',
+                html: jf_indent(depth, indentStr) + '<span class="fold-toggle" data-fold="' + foldId + '" onclick="jf_toggleFold(\'' + foldId + '\')">▼</span><span class="json-bracket">{</span><span class="fold-placeholder" data-fold-ph="' + foldId + '" style="display:none" onclick="jf_toggleFold(\'' + foldId + '\')">' + escapeHtml(preview) + '</span>',
+                foldStart: true, foldId: foldId
+            });
+            keys.forEach((key, idx) => {
+                const isLast = idx === keys.length - 1;
+                const keyStr = JSON.stringify(key);
+                const val = obj[key];
+                if (val !== null && typeof val === 'object') {
+                    const subLines = [];
+                    jf_renderValue(val, subLines, depth + 1, indentStr, !isLast);
+                    if (subLines.length > 0) {
+                        const firstHtml = subLines[0].html;
+                        const keyHtml = jf_indent(depth + 1, indentStr) + '<span class="json-key">' + escapeHtml(keyStr) + '</span><span class="json-colon">: </span>';
+                        const strippedHtml = firstHtml.replace(/^(<span class="indent">.*?<\/span>)/, '');
+                        subLines[0] = {
+                            text: indentStr.repeat(depth + 1) + keyStr + ': ' + subLines[0].text.trim(),
+                            html: keyHtml + strippedHtml,
+                            foldStart: subLines[0].foldStart, foldId: subLines[0].foldId, foldParent: foldId
+                        };
+                        for (let si = 1; si < subLines.length; si++) {
+                            subLines[si].foldParent = subLines[si].foldParent || foldId;
+                        }
+                        lines.push(...subLines);
+                    }
+                } else {
+                    const valStr = JSON.stringify(val);
+                    const tc = isLast ? '' : ',';
+                    let valHtml;
+                    if (val === null) valHtml = '<span class="json-null">null</span>';
+                    else if (typeof val === 'boolean') valHtml = '<span class="json-boolean">' + val + '</span>';
+                    else if (typeof val === 'number') valHtml = '<span class="json-number">' + val + '</span>';
+                    else valHtml = '<span class="json-string">' + escapeHtml(valStr) + '</span>';
+                    lines.push({
+                        text: indentStr.repeat(depth + 1) + keyStr + ': ' + valStr + tc,
+                        html: jf_indent(depth + 1, indentStr) + '<span class="json-key">' + escapeHtml(keyStr) + '</span><span class="json-colon">: </span>' + valHtml + jf_commaSpan(tc),
+                        foldStart: false, foldParent: foldId
+                    });
+                }
+            });
+            lines.push({
+                text: indentStr.repeat(depth) + '}' + comma,
+                html: jf_indent(depth, indentStr) + '<span class="json-bracket">}</span>' + jf_commaSpan(comma),
+                foldStart: false, foldEnd: foldId, foldParent: foldId
+            });
+        }
+
+        function jf_renderArray(arr, lines, depth, indentStr, comma) {
+            if (arr.length === 0) {
+                lines.push({ text: indentStr.repeat(depth) + '[]' + comma, html: jf_indent(depth, indentStr) + '<span class="json-bracket">[]</span>' + jf_commaSpan(comma), foldStart: false });
+                return;
+            }
+            const foldId = 'fold_' + (foldIdCounter++);
+            const preview = jf_getArrayPreview(arr);
+            lines.push({
+                text: indentStr.repeat(depth) + '[',
+                html: jf_indent(depth, indentStr) + '<span class="fold-toggle" data-fold="' + foldId + '" onclick="jf_toggleFold(\'' + foldId + '\')">▼</span><span class="json-bracket">[</span><span class="fold-placeholder" data-fold-ph="' + foldId + '" style="display:none" onclick="jf_toggleFold(\'' + foldId + '\')">' + escapeHtml(preview) + '</span>',
+                foldStart: true, foldId: foldId
+            });
+            arr.forEach((item, idx) => {
+                const subLines = [];
+                jf_renderValue(item, subLines, depth + 1, indentStr, idx < arr.length - 1);
+                for (const sl of subLines) {
+                    sl.foldParent = sl.foldParent || foldId;
+                    lines.push(sl);
+                }
+            });
+            lines.push({
+                text: indentStr.repeat(depth) + ']' + comma,
+                html: jf_indent(depth, indentStr) + '<span class="json-bracket">]</span>' + jf_commaSpan(comma),
+                foldStart: false, foldEnd: foldId, foldParent: foldId
+            });
+        }
+
+        function jf_getObjectPreview(obj) {
+            const keys = Object.keys(obj);
+            if (keys.length <= 3) return '{ ' + keys.map(k => JSON.stringify(k) + ': ...').join(', ') + ' }';
+            return '{ ' + keys.slice(0, 2).map(k => JSON.stringify(k) + ': ...').join(', ') + ', ... } (' + keys.length + ' keys)';
+        }
+        function jf_getArrayPreview(arr) { return '[ ... ' + arr.length + ' items ]'; }
+        function jf_indent(depth, indentStr) { return '<span class="indent">' + indentStr.repeat(depth) + '</span>'; }
+        function jf_commaSpan(c) { return c ? '<span class="json-comma">,</span>' : ''; }
+
+        function jf_buildTreeHTML(lines) {
+            let html = '';
+            for (const l of lines) {
+                let attrs = '';
+                if (l.foldParent) attrs += ' data-fold-parent="' + l.foldParent + '"';
+                if (l.foldEnd) attrs += ' data-fold-end="' + l.foldEnd + '"';
+                html += '<div class="json-line"' + attrs + '>' + l.html + '</div>';
+            }
+            return html;
+        }
+
+        // Fold
+        function jf_toggleFold(foldId) {
+            const toggle = document.querySelector('.fold-toggle[data-fold="' + foldId + '"]');
+            const placeholder = document.querySelector('[data-fold-ph="' + foldId + '"]');
+            if (toggle.classList.contains('collapsed')) {
+                toggle.classList.remove('collapsed'); toggle.textContent = '▼'; placeholder.style.display = 'none';
+                document.querySelectorAll('[data-fold-parent="' + foldId + '"]').forEach(el => { el.style.display = ''; });
+            } else {
+                toggle.classList.add('collapsed'); toggle.textContent = '▶'; placeholder.style.display = '';
+                jf_hideDescendants(foldId);
+            }
+            jf_updateGutter();
+        }
+        function jf_hideDescendants(foldId) {
+            document.querySelectorAll('[data-fold-parent="' + foldId + '"]').forEach(el => {
+                el.style.display = 'none';
+                const nested = el.querySelector('.fold-toggle');
+                if (nested) jf_hideDescendants(nested.dataset.fold);
+            });
+        }
+        function jf_expandAll() {
+            document.querySelectorAll('.fold-toggle.collapsed').forEach(t => {
+                t.classList.remove('collapsed'); t.textContent = '▼';
+                const ph = document.querySelector('[data-fold-ph="' + t.dataset.fold + '"]');
+                if (ph) ph.style.display = 'none';
+            });
+            document.querySelectorAll('.json-line[data-fold-parent]').forEach(el => { el.style.display = ''; });
+            jf_updateGutter();
+        }
+        function jf_collapseAll() {
+            document.querySelectorAll('.fold-toggle').forEach(t => {
+                t.classList.add('collapsed'); t.textContent = '▶';
+                const ph = document.querySelector('[data-fold-ph="' + t.dataset.fold + '"]');
+                if (ph) ph.style.display = '';
+                jf_hideDescendants(t.dataset.fold);
+            });
+            jf_updateGutter();
+        }
+        function jf_updateGutter() {
+            let html = '';
+            document.querySelectorAll('#jsonOutput .json-line').forEach((el, idx) => {
+                if (el.style.display !== 'none') html += '<span class="line-num">' + (idx + 1) + '</span>';
+            });
+            outputGutter.innerHTML = html;
+        }
+
+        function jf_displayTreeSuccess(html) {
+            jsonOutput.className = '';
+            jsonOutput.innerHTML = html;
+            const lineCount = document.querySelectorAll('#jsonOutput .json-line').length;
+            jf_updateGutter();
+            errorIndicator.classList.remove('visible');
+            outputTitle.innerHTML = '<span class="dot output"></span>输出';
+            outputSizeEl.textContent = lineCount + ' lines';
+            statusDot.className = 'status-dot valid';
+            statusText.textContent = '✓ JSON 有效';
+            showToast('✓ 格式化成功');
+        }
+
+        function jf_syntaxHighlight(json) {
+            json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return json.replace(
+                /("(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+                function(match) {
+                    let cls = 'json-number';
+                    if (/^"/.test(match)) {
+                        if (/:$/.test(match)) { cls = 'json-key'; return '<span class="' + cls + '">' + match.slice(0, -1) + '</span><span class="json-colon">:</span>'; }
+                        else { cls = 'json-string'; }
+                    } else if (/true|false/.test(match)) { cls = 'json-boolean'; }
+                    else if (/null/.test(match)) { cls = 'json-null'; }
+                    return '<span class="' + cls + '">' + match + '</span>';
+                }
+            );
+        }
+
+        function jf_renderGutter(count, errorLines = new Set()) {
+            let html = '';
+            for (let i = 1; i <= count; i++) {
+                const cls = errorLines.has(i) ? 'line-num error-line' : 'line-num';
+                html += '<span class="' + cls + '">' + i + '</span>';
+            }
+            outputGutter.innerHTML = html;
+        }
+
+        function jf_handleParseError(input, error, indent) {
+            const errorInfo = jf_parseErrorPosition(error.message, input);
+            const { formatted, errorLineNumbers } = jf_bestEffortFormat(input, indent, errorInfo);
+            lastFormattedText = stripHtml(formatted);
+            const lines = formatted.split('\n');
+            jsonOutput.className = '';
+            jsonOutput.innerHTML = lines.join('\n');
+            jf_renderGutter(lines.length, errorLineNumbers);
+            errorIndicator.classList.add('visible');
+            errorMsg.textContent = jf_simplifyErrorMessage(error.message);
+            if (errorInfo.line > 0) { errorPos.textContent = '行 ' + errorInfo.line + ', 列 ' + errorInfo.column; errorPos.style.display = ''; }
+            else { errorPos.style.display = 'none'; }
+            outputTitle.innerHTML = '<span class="dot error"></span>输出 (含错误)';
+            outputSizeEl.textContent = lines.length + ' lines';
+            statusDot.className = 'status-dot invalid';
+            statusText.textContent = '✗ JSON 无效';
+            showToast('⚠ JSON 格式有误，已尽力格式化');
+        }
+
+        function jf_parseErrorPosition(errorMessage, input) {
+            let line = -1, column = -1, position = -1;
+            const posMatch = errorMessage.match(/position\s+(\d+)/i);
+            if (posMatch) {
+                position = parseInt(posMatch[1]);
+                const upToPos = input.substring(0, position);
+                const linesUpTo = upToPos.split('\n');
+                line = linesUpTo.length;
+                column = linesUpTo[linesUpTo.length - 1].length + 1;
+            }
+            const lineColMatch = errorMessage.match(/line\s+(\d+)\s+column\s+(\d+)/i);
+            if (lineColMatch) { line = parseInt(lineColMatch[1]); column = parseInt(lineColMatch[2]); }
+            return { line, column, position };
+        }
+
+        function jf_bestEffortFormat(input, indent, errorInfo) {
+            const indentStr = indent === '\t' ? '\t' : ' '.repeat(typeof indent === 'number' ? indent : 2);
+            const errorLineNumbers = new Set();
+            let result = [], depth = 0, inString = false, escaped = false, currentLine = '', inputLine = 1, inputCol = 0, hasError = false, i = 0;
+            const errorPosition = errorInfo.position >= 0 ? errorInfo.position : -1;
+            function addLine(content, isError) {
+                const lc = indentStr.repeat(depth) + content;
+                if (isError) { result.push('<span class="json-error-line">' + lc + '</span>'); errorLineNumbers.add(result.length); }
+                else { result.push(jf_syntaxHighlight(lc)); }
+            }
+            function pushCurrent(isError) { if (currentLine.trim()) { addLine(currentLine.trim(), isError); currentLine = ''; } }
+            while (i < input.length) {
+                const ch = input[i]; inputCol++;
+                if (ch === '\n') { inputLine++; inputCol = 0; }
+                const atError = (errorPosition >= 0 && i === errorPosition) || (errorInfo.line > 0 && inputLine === errorInfo.line && inputCol === errorInfo.column);
+                if (atError && !hasError) hasError = true;
+                if (inString) {
+                    if (escaped) { currentLine += ch; escaped = false; }
+                    else if (ch === '\\') { currentLine += ch; escaped = true; }
+                    else if (ch === '"') { currentLine += ch; inString = false; }
+                    else { currentLine += ch; }
+                    i++; continue;
+                }
+                if (/\s/.test(ch)) { i++; continue; }
+                switch (ch) {
+                    case '{': case '[': currentLine += ch; pushCurrent(hasError); if (hasError) hasError = false; depth++; break;
+                    case '}': case ']':
+                        pushCurrent(hasError); if (hasError) hasError = false; depth = Math.max(0, depth - 1);
+                        currentLine += ch;
+                        let nextNonWs = jf_findNextNonWs(input, i + 1);
+                        if (nextNonWs === ',') { currentLine += ','; i = input.indexOf(',', i + 1); }
+                        pushCurrent(hasError); break;
+                    case ',': currentLine += ch; pushCurrent(hasError); if (hasError) hasError = false; break;
+                    case ':': currentLine += ': '; break;
+                    case '"': inString = true; currentLine += ch; break;
+                    default:
+                        if (atError) currentLine += '<span class="json-error-char">' + escapeHtml(ch) + '</span>';
+                        else currentLine += escapeHtml(ch);
+                        break;
+                }
+                i++;
+            }
+            pushCurrent(hasError);
+            if (errorLineNumbers.size === 0 && errorInfo.line > 0) {
+                const t = Math.min(errorInfo.line, result.length);
+                if (t > 0) { result[t-1] = '<span class="json-error-line">' + jf_stripSpanWrapper(result[t-1]) + '</span>'; errorLineNumbers.add(t); }
+            }
+            if (errorLineNumbers.size === 0 && result.length > 0) {
+                const l = result.length;
+                result[l-1] = '<span class="json-error-line">' + jf_stripSpanWrapper(result[l-1]) + '</span>'; errorLineNumbers.add(l);
+            }
+            return { formatted: result.join('\n'), errorLineNumbers };
+        }
+
+        function jf_findNextNonWs(str, idx) { for (let i = idx; i < str.length; i++) { if (!/\s/.test(str[i])) return str[i]; } return null; }
+        function jf_stripSpanWrapper(html) {
+            if (html.startsWith('<span class="json-error-line">')) return html.slice('<span class="json-error-line">'.length, -'</span>'.length);
+            return html;
+        }
+        function jf_simplifyErrorMessage(msg) {
+            if (msg.includes('Unexpected token')) { const t = msg.match(/Unexpected token (.)/); return '意外的字符 "' + (t ? t[1] : '?') + '"'; }
+            if (msg.includes('Unexpected end')) return 'JSON 未完整结束';
+            if (msg.includes('Unterminated string')) return '字符串未闭合';
+            return msg;
+        }
+
+        // Search
+        function jf_openSearch() { searchBar.classList.add('visible'); searchInput.focus(); searchInput.select(); }
+        function jf_closeSearch() {
+            searchBar.classList.remove('visible');
+            jf_clearSearchHighlights(); jf_clearInputHighlights();
+            searchMatches = []; searchCurrentIdx = -1; searchInfo.textContent = '';
+        }
+        function jf_performSearch() {
+            jf_clearSearchHighlights(); jf_clearInputHighlights();
+            const query = searchInput.value.trim();
+            if (!query) { searchInfo.textContent = ''; searchMatches = []; searchCurrentIdx = -1; return; }
+            const outputEl = document.getElementById('jsonOutput');
+            searchMatches = []; searchCurrentIdx = -1;
+            const walker = document.createTreeWalker(outputEl, NodeFilter.SHOW_TEXT, null, false);
+            const textNodes = [];
+            while (walker.nextNode()) textNodes.push(walker.currentNode);
+            const queryLower = query.toLowerCase();
+            for (const node of textNodes) {
+                const textLower = node.textContent.toLowerCase();
+                let startIdx = 0;
+                while (true) {
+                    const idx = textLower.indexOf(queryLower, startIdx);
+                    if (idx === -1) break;
+                    searchMatches.push({ node, offset: idx, length: query.length });
+                    startIdx = idx + 1;
+                }
+            }
+            if (searchMatches.length > 0) { jf_highlightMatches(); searchCurrentIdx = 0; jf_scrollToMatch(searchCurrentIdx); }
+            jf_highlightInputBackdrop(query);
+            jf_updateSearchInfo();
+        }
+        function jf_highlightInputBackdrop(query) {
+            const text = jsonInput.value;
+            if (!text || !query) { inputBackdrop.innerHTML = ''; return; }
+            const qL = query.toLowerCase(), tL = text.toLowerCase();
+            let html = '', lastIdx = 0;
+            while (true) {
+                const idx = tL.indexOf(qL, lastIdx);
+                if (idx === -1) break;
+                html += escapeHtml(text.substring(lastIdx, idx));
+                html += '<span class="search-match">' + escapeHtml(text.substring(idx, idx + query.length)) + '</span>';
+                lastIdx = idx + query.length;
+            }
+            html += escapeHtml(text.substring(lastIdx));
+            inputBackdrop.innerHTML = html;
+            inputBackdrop.scrollTop = jsonInput.scrollTop;
+            inputBackdrop.scrollLeft = jsonInput.scrollLeft;
+        }
+        function jf_clearInputHighlights() { inputBackdrop.innerHTML = ''; }
+        function jf_highlightMatches() {
+            const grouped = new Map();
+            for (const m of searchMatches) { if (!grouped.has(m.node)) grouped.set(m.node, []); grouped.get(m.node).push(m); }
+            for (const [node, matches] of grouped) {
+                matches.sort((a, b) => b.offset - a.offset);
+                let currentNode = node;
+                for (const m of matches) {
+                    const range = document.createRange();
+                    range.setStart(currentNode, m.offset); range.setEnd(currentNode, m.offset + m.length);
+                    const span = document.createElement('span'); span.className = 'search-match';
+                    range.surroundContents(span);
+                }
+            }
+            searchMatches = [];
+            document.querySelectorAll('#jsonOutput .search-match').forEach(el => searchMatches.push(el));
+        }
+        function jf_clearSearchHighlights() {
+            document.querySelectorAll('#jsonOutput .search-match').forEach(el => {
+                const parent = el.parentNode;
+                while (el.firstChild) parent.insertBefore(el.firstChild, el);
+                parent.removeChild(el); parent.normalize();
+            });
+        }
+        function jf_searchNext() { if (!searchMatches.length) return; searchCurrentIdx = (searchCurrentIdx + 1) % searchMatches.length; jf_scrollToMatch(searchCurrentIdx); jf_updateSearchInfo(); }
+        function jf_searchPrev() { if (!searchMatches.length) return; searchCurrentIdx = (searchCurrentIdx - 1 + searchMatches.length) % searchMatches.length; jf_scrollToMatch(searchCurrentIdx); jf_updateSearchInfo(); }
+        function jf_scrollToMatch(idx) {
+            searchMatches.forEach((el, i) => { if (i === idx) el.classList.add('current'); else el.classList.remove('current'); });
+            if (searchMatches[idx]) searchMatches[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        function jf_updateSearchInfo() {
+            const inputCount = inputBackdrop.querySelectorAll('.search-match').length;
+            const outputCount = searchMatches.length;
+            if (inputCount + outputCount === 0) searchInfo.textContent = '无结果';
+            else if (outputCount > 0) searchInfo.textContent = (searchCurrentIdx + 1) + ' / ' + outputCount + ' (右侧)';
+            else searchInfo.textContent = inputCount + ' 处匹配 (左侧)';
+            const query = searchInput.value.trim();
+            const hasEntries = query && lastParsedData && jf_findMatchingEntries(lastParsedData, query, '$').length > 0;
+            document.getElementById('copyValuesBtn').disabled = !hasEntries;
+            document.getElementById('copyPairsBtn').disabled = !hasEntries;
+        }
+        function jf_findMatchingEntries(data, query, path) {
+            const results = [], qL = query.toLowerCase();
+            if (data === null || typeof data !== 'object') return results;
+            if (Array.isArray(data)) { data.forEach((item, idx) => { results.push(...jf_findMatchingEntries(item, query, path + '[' + idx + ']')); }); }
+            else { for (const key of Object.keys(data)) { if (key.toLowerCase().includes(qL)) results.push({ key, value: data[key], path: path + '.' + key }); if (data[key] !== null && typeof data[key] === 'object') results.push(...jf_findMatchingEntries(data[key], query, path + '.' + key)); } }
+            return results;
+        }
+        function jf_copyMatchedValues() {
+            const query = searchInput.value.trim();
+            if (!query || !lastParsedData) { showToast('无搜索结果'); return; }
+            const entries = jf_findMatchingEntries(lastParsedData, query, '$');
+            if (!entries.length) { showToast('未找到匹配的键'); return; }
+            copyToClipboard(entries.map(e => e.value === null ? 'null' : typeof e.value === 'object' ? JSON.stringify(e.value) : typeof e.value === 'string' ? e.value : String(e.value)).join('\n'));
+            showToast('✓ 已复制 ' + entries.length + ' 个值');
+        }
+        function jf_copyMatchedPairs() {
+            const query = searchInput.value.trim();
+            if (!query || !lastParsedData) { showToast('无搜索结果'); return; }
+            const entries = jf_findMatchingEntries(lastParsedData, query, '$');
+            if (!entries.length) { showToast('未找到匹配的键'); return; }
+            copyToClipboard(entries.map(e => { const v = e.value === null ? 'null' : typeof e.value === 'string' ? JSON.stringify(e.value) : typeof e.value === 'object' ? JSON.stringify(e.value) : String(e.value); return '"' + e.key + '": ' + v; }).join('\n'));
+            showToast('✓ 已复制 ' + entries.length + ' 个键值对');
+        }
+
+        searchInput.addEventListener('input', () => { jf_performSearch(); });
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); if (e.shiftKey) jf_searchPrev(); else jf_searchNext(); }
+            if (e.key === 'Escape') { e.preventDefault(); jf_closeSearch(); }
+        });
+
+        function jf_minifyJSON() {
+            const input = jsonInput.value.trim();
+            if (!input) { showToast('请先输入 JSON'); return; }
+            try {
+                const parsed = JSON.parse(input);
+                const minified = JSON.stringify(parsed);
+                lastFormattedText = minified;
+                lastParsedData = parsed;
+                isValidJSON = true;
+                jsonOutput.className = '';
+                jsonOutput.innerHTML = '<div class="json-line">' + jf_syntaxHighlight(escapeHtml(minified)) + '</div>';
+                jf_renderGutter(1);
+                errorIndicator.classList.remove('visible');
+                outputTitle.innerHTML = '<span class="dot output"></span>输出 (压缩)';
+                outputSizeEl.textContent = '1 lines';
+                statusDot.className = 'status-dot valid';
+                statusText.textContent = '✓ 已删除空格';
+                showToast('✓ 已删除空格');
+            } catch (e) { showToast('⚠ JSON 无效，无法压缩'); }
+        }
+        // 删除空格并转义：压缩后将整个 JSON 字符串转义（如嵌入到另一个字符串中）
+        function jf_minifyAndEscape() {
+            const input = jsonInput.value.trim();
+            if (!input) { showToast('请先输入 JSON'); return; }
+            try {
+                const parsed = JSON.parse(input);
+                const minified = JSON.stringify(parsed);
+                // JSON.stringify 一个字符串 → 外层加引号并转义内部引号
+                const escaped = JSON.stringify(minified);
+                // 去掉外层引号，只保留转义内容
+                const result = escaped.slice(1, -1);
+                lastFormattedText = result;
+                lastParsedData = parsed;
+                isValidJSON = true;
+                jsonOutput.className = '';
+                jsonOutput.innerHTML = '<div class="json-line">' + escapeHtml(result) + '</div>';
+                jf_renderGutter(1);
+                errorIndicator.classList.remove('visible');
+                outputTitle.innerHTML = '<span class="dot output"></span>输出 (压缩+转义)';
+                outputSizeEl.textContent = '1 lines';
+                statusDot.className = 'status-dot valid';
+                statusText.textContent = '✓ 已删除空格并转义';
+                showToast('✓ 已删除空格并转义');
+            } catch (e) { showToast('⚠ JSON 无效，无法处理'); }
+        }
+        // 去除转义：将转义的 JSON 字符串还原为正常 JSON
+        function jf_unescape() {
+            let input = jsonInput.value.trim();
+            if (!input) { showToast('请先输入内容'); return; }
+            try {
+                // 情况1：输入本身是一个被引号包裹的转义字符串（如 "{\"key\":\"value\"}"）
+                // 情况2：输入是不带引号的转义内容（如 {\"key\":\"value\"}）
+                let unescaped;
+                if (input.startsWith('"') && input.endsWith('"')) {
+                    // 带引号的转义字符串，直接用 JSON.parse 解析
+                    unescaped = JSON.parse(input);
+                } else {
+                    // 不带引号，手动加上引号再解析
+                    unescaped = JSON.parse('"' + input + '"');
+                }
+                // 设置还原后的内容到输入框
+                jsonInput.value = unescaped;
+                jsonInput.dispatchEvent(new Event('input'));
+                // 尝试格式化
+                try {
+                    JSON.parse(unescaped);
+                    jf_formatJSON();
+                    showToast('✓ 已去除转义并格式化');
+                } catch (e2) {
+                    // 去除转义成功但不是有效 JSON，只显示结果
+                    lastFormattedText = unescaped;
+                    jsonOutput.className = '';
+                    jsonOutput.innerHTML = '<div class="json-line">' + escapeHtml(unescaped) + '</div>';
+                    jf_renderGutter(1);
+                    statusDot.className = 'status-dot valid';
+                    statusText.textContent = '✓ 已去除转义';
+                    showToast('✓ 已去除转义');
+                }
+            } catch (e) {
+                showToast('⚠ 无法去除转义，请检查输入格式');
+            }
+        }
+        function jf_copyOutput() {
+            if (!lastFormattedText) { showToast('没有可复制的内容'); return; }
+            copyToClipboard(lastFormattedText);
+            showToast('✓ 已复制到剪贴板');
+        }
+        function jf_clearAll() {
+            jsonInput.value = '';
+            jsonOutput.className = 'placeholder-text'; jsonOutput.innerHTML = '格式化结果将显示在此处...';
+            outputGutter.innerHTML = ''; errorIndicator.classList.remove('visible');
+            outputTitle.innerHTML = '<span class="dot output"></span>输出';
+            inputSizeEl.textContent = '0 chars'; outputSizeEl.textContent = '0 lines';
+            statusDot.className = 'status-dot empty'; statusText.textContent = '等待输入';
+            lastFormattedText = ''; lastParsedData = null; isValidJSON = false;
+            jsonInput.focus();
+        }
+        function jf_loadSample() {
+            const sample = {"name":"JSON Formatter","version":"1.0.0","description":"一个强大的 JSON 格式化工具","features":["格式化","语法高亮","错误检测","折叠展开","搜索"],"author":{"name":"Alfred Plugin","email":"example@test.com"},"settings":{"indent":2,"theme":"light","autoFormat":true},"data":[{"id":1,"title":"任务一","done":false},{"id":2,"title":"任务二","done":true}],"tags":null,"count":42,"active":true};
+            jsonInput.value = JSON.stringify(sample);
+            jsonInput.dispatchEvent(new Event('input'));
+            jf_formatJSON();
+        }
+
+        // Resizable
+        (function() {
+            const divider = document.getElementById('divider');
+            const leftPanel = document.getElementById('leftPanel');
+            const rightPanel = document.getElementById('rightPanel');
+            let isResizing = false;
+            divider.addEventListener('mousedown', (e) => { isResizing = true; document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none'; e.preventDefault(); });
+            document.addEventListener('mousemove', (e) => {
+                if (!isResizing) return;
+                const rect = document.querySelector('.jf-main').getBoundingClientRect();
+                const ratio = Math.max(0.2, Math.min(0.8, (e.clientX - rect.left) / rect.width));
+                leftPanel.style.flex = ratio; rightPanel.style.flex = 1 - ratio;
+            });
+            document.addEventListener('mouseup', () => { if (isResizing) { isResizing = false; document.body.style.cursor = ''; document.body.style.userSelect = ''; } });
+        })();
+
+        // Drag & Drop & Paste
+        jsonInput.addEventListener('dragover', (e) => { e.preventDefault(); jsonInput.style.borderColor = 'var(--accent)'; });
+        jsonInput.addEventListener('dragleave', () => { jsonInput.style.borderColor = ''; });
+        jsonInput.addEventListener('drop', (e) => {
+            e.preventDefault(); jsonInput.style.borderColor = '';
+            const file = e.dataTransfer.files[0];
+            if (file) { const reader = new FileReader(); reader.onload = (evt) => { jsonInput.value = evt.target.result; jsonInput.dispatchEvent(new Event('input')); jf_formatJSON(); }; reader.readAsText(file); }
+        });
+        jsonInput.addEventListener('paste', () => { setTimeout(() => { jsonInput.dispatchEvent(new Event('input')); jf_formatJSON(); }, 50); });
+
+        // ==================== Timestamp Converter ====================
+        let tsUnit = 'sec'; // 'sec' or 'ms'
+        let tsTimerRunning = true;
+        let tsTimerId = null;
+
+        function tsSetUnit(unit) {
+            tsUnit = unit;
+            document.getElementById('tsBtnSec').classList.toggle('active', unit === 'sec');
+            document.getElementById('tsBtnMs').classList.toggle('active', unit === 'ms');
+        }
+
+        function tsUpdateCurrent() {
+            const now = Date.now();
+            const display = tsUnit === 'ms' ? now : Math.floor(now / 1000);
+            document.getElementById('tsCurrentValue').textContent = display;
+            // datetime display
+            const d = new Date(now);
+            const pad = n => String(n).padStart(2, '0');
+            document.getElementById('tsCurrentDatetime').textContent =
+                d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' +
+                pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + '.' +
+                String(d.getMilliseconds()).padStart(3, '0');
+        }
+
+        function tsStartTimer() {
+            if (tsTimerId) clearInterval(tsTimerId);
+            tsTimerId = setInterval(tsUpdateCurrent, 100);
+            tsTimerRunning = true;
+        }
+
+        function tsCopyCurrent() {
+            const val = document.getElementById('tsCurrentValue').textContent;
+            copyToClipboard(val);
+            showToast('✓ 已复制: ' + val);
+        }
+
+        // Timestamp → Date
+        function tsToDate() {
+            const input = document.getElementById('tsToDateInput').value.trim();
+            const resultEl = document.getElementById('tsToDateResult');
+            if (!input) { resultEl.innerHTML = '<span class="ts-result-text placeholder">请输入时间戳</span>'; return; }
+            const num = Number(input);
+            if (isNaN(num)) { resultEl.innerHTML = '<span class="ts-result-text placeholder" style="color:var(--red)">无效的时间戳</span>'; return; }
+
+            const unitSel = document.getElementById('tsToDateUnit').value;
+            let ms;
+            if (unitSel === 'auto') {
+                // Auto-detect: if > 1e12, treat as ms
+                ms = num > 1e12 ? num : num * 1000;
+            } else if (unitSel === 'ms') {
+                ms = num;
+            } else {
+                ms = num * 1000;
+            }
+
+            const d = new Date(ms);
+            if (isNaN(d.getTime())) { resultEl.innerHTML = '<span class="ts-result-text placeholder" style="color:var(--red)">无效的时间戳</span>'; return; }
+
+            const pad = n => String(n).padStart(2, '0');
+            const dateStr = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' +
+                pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+            resultEl.innerHTML = '<span class="ts-result-text">' + escapeHtml(dateStr) + '</span>' +
+                '<button class="ts-copy-btn" onclick="copyToClipboard(\'' + dateStr + '\');showToast(\'✓ 已复制\')">复制</button>';
+        }
+
+        // Date → Timestamp
+        function tsToStamp() {
+            const input = document.getElementById('tsToStampInput').value.trim();
+            const resultEl = document.getElementById('tsToStampResult');
+            if (!input) { resultEl.innerHTML = '<span class="ts-result-text placeholder">请输入日期时间</span>'; return; }
+
+            // Try parsing
+            let d = new Date(input);
+            // If native parse fails, try common formats
+            if (isNaN(d.getTime())) {
+                // Try "YYYY-MM-DD HH:MM:SS" → "YYYY-MM-DDTHH:MM:SS"
+                const normalized = input.replace(/\s+/, 'T');
+                d = new Date(normalized);
+            }
+            if (isNaN(d.getTime())) {
+                // Try "YYYY/MM/DD HH:MM:SS"
+                const normalized = input.replace(/\//g, '-').replace(/\s+/, 'T');
+                d = new Date(normalized);
+            }
+            if (isNaN(d.getTime())) {
+                resultEl.innerHTML = '<span class="ts-result-text placeholder" style="color:var(--red)">无法解析日期，请使用 YYYY-MM-DD HH:mm:ss 格式</span>';
+                return;
+            }
+
+            const sec = Math.floor(d.getTime() / 1000);
+            const ms = d.getTime();
+            const text = sec + '（秒）/ ' + ms + '（毫秒）';
+            resultEl.innerHTML = '<span class="ts-result-text">' + escapeHtml(text) + '</span>' +
+                '<button class="ts-copy-btn" onclick="copyToClipboard(\'' + sec + '\');showToast(\'✓ 已复制秒级时间戳\')">复制(s)</button>' +
+                '<button class="ts-copy-btn" style="margin-left:4px" onclick="copyToClipboard(\'' + ms + '\');showToast(\'✓ 已复制毫秒时间戳\')">复制(ms)</button>';
+        }
+
+        // Enter key triggers conversion
+        document.getElementById('tsToDateInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); tsToDate(); } });
+        document.getElementById('tsToStampInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); tsToStamp(); } });
+
+        // ==================== Shared Utilities ====================
+        function escapeHtml(str) { return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+        function stripHtml(html) { const t = document.createElement('div'); t.innerHTML = html; return t.textContent || t.innerText || ''; }
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {}).catch(() => {
+                const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+                document.execCommand('copy'); document.body.removeChild(ta);
+            });
+        }
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg; toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2000);
+        }
+
+        // ==================== Global Keyboard Shortcuts ====================
+        document.addEventListener('keydown', (e) => {
+            // Tab 键切换 JSON 格式化 / 时间戳转换
+            if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+                e.preventDefault();
+                if (currentTab === 'json') { switchTab('timestamp'); }
+                else { switchTab('json'); }
+                return;
+            }
+            if (e.key === 'Escape') {
+                if (searchBar.classList.contains('visible')) { jf_closeSearch(); }
+                else { try { window.webkit.messageHandlers.closeWindow.postMessage('close'); } catch(ex) { window.close(); } }
+                e.preventDefault(); return;
+            }
+            if ((e.metaKey || e.ctrlKey) && e.key === 'f' && currentTab === 'json') { e.preventDefault(); jf_openSearch(); return; }
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && currentTab === 'json') { e.preventDefault(); jf_formatJSON(); }
+            if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'm' || e.key === 'M') && currentTab === 'json') { e.preventDefault(); jf_minifyJSON(); }
+            if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'c' || e.key === 'C') && currentTab === 'json') { e.preventDefault(); jf_copyOutput(); }
+        });
+
+        // ==================== Init ====================
+        window.addEventListener('load', () => {
+            jsonInput.focus();
+            tsStartTimer();
+            tsUpdateCurrent();
+        });
+    </script>
+</body>
+</html>

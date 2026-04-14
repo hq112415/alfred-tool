@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>bundleid</key>
+	<string>com.alfred.codingtool</string>
+	<key>category</key>
+	<string>Tools</string>
+	<key>connections</key>
+	<dict>
+		<key>AEE7D063-6D45-4B23-A1E3-4A2C5D1F8E9B</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>BFF8E174-9A32-4C56-B7D1-2E3F6A8C9D0E</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitowards</key>
+				<string></string>
+			</dict>
+		</array>
+		<key>C3A1B2D4-5E6F-7890-AB12-CD34EF56GH78</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>BFF8E174-9A32-4C56-B7D1-2E3F6A8C9D0E</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitowards</key>
+				<string></string>
+			</dict>
+		</array>
+	</dict>
+	<key>createdby</key>
+	<string>Coding Tool</string>
+	<key>description</key>
+	<string>⌘⇧T 或输入 ct 打开编程小工具箱</string>
+	<key>disabled</key>
+	<false/>
+	<key>name</key>
+	<string>Coding Tool</string>
+	<key>objects</key>
+	<array>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>action</key>
+				<integer>0</integer>
+				<key>focusedappvariable</key>
+				<false/>
+				<key>focusedappvariablename</key>
+				<string></string>
+				<key>hotkey</key>
+				<integer>17</integer>
+				<key>hotmod</key>
+				<integer>1179648</integer>
+				<key>hotstring</key>
+				<string>T</string>
+				<key>leftrightmod</key>
+				<integer>0</integer>
+				<key>modsmode</key>
+				<integer>0</integer>
+				<key>relatedAppleName</key>
+				<string></string>
+				<key>relatedAppsMode</key>
+				<integer>0</integer>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.trigger.hotkey</string>
+			<key>uid</key>
+			<string>C3A1B2D4-5E6F-7890-AB12-CD34EF56GH78</string>
+			<key>version</key>
+			<integer>2</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>argumenttype</key>
+				<integer>2</integer>
+				<key>keyword</key>
+				<string>ct</string>
+				<key>subtext</key>
+				<string>打开编程小工具箱</string>
+				<key>text</key>
+				<string>Coding Tool</string>
+				<key>withspace</key>
+				<false/>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.input.keyword</string>
+			<key>uid</key>
+			<string>AEE7D063-6D45-4B23-A1E3-4A2C5D1F8E9B</string>
+			<key>version</key>
+			<integer>1</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>concurrently</key>
+				<false/>
+				<key>escaping</key>
+				<integer>0</integer>
+				<key>script</key>
+				<string>PIDFILE="/tmp/coding_tool_$(id -u).pid"
+if [ -f "$PIDFILE" ]; then
+    OLDPID=$(cat "$PIDFILE" 2&gt;/dev/null)
+    if [ -n "$OLDPID" ] &amp;&amp; /bin/kill -0 "$OLDPID" 2&gt;/dev/null; then
+        /bin/kill -USR1 "$OLDPID"
+        exit 0
+    fi
+fi
+nohup ./coding_tool &gt;/dev/null 2&gt;&amp;1 &amp;
+disown</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>type</key>
+				<integer>0</integer>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.action.script</string>
+			<key>uid</key>
+			<string>BFF8E174-9A32-4C56-B7D1-2E3F6A8C9D0E</string>
+			<key>version</key>
+			<integer>2</integer>
+		</dict>
+	</array>
+	<key>readme</key>
+	<string></string>
+	<key>uidata</key>
+	<dict>
+		<key>C3A1B2D4-5E6F-7890-AB12-CD34EF56GH78</key>
+		<dict>
+			<key>xpos</key>
+			<real>150</real>
+			<key>ypos</key>
+			<real>100</real>
+		</dict>
+		<key>AEE7D063-6D45-4B23-A1E3-4A2C5D1F8E9B</key>
+		<dict>
+			<key>xpos</key>
+			<real>150</real>
+			<key>ypos</key>
+			<real>300</real>
+		</dict>
+		<key>BFF8E174-9A32-4C56-B7D1-2E3F6A8C9D0E</key>
+		<dict>
+			<key>xpos</key>
+			<real>400</real>
+			<key>ypos</key>
+			<real>200</real>
+		</dict>
+	</dict>
+	<key>version</key>
+	<string>2.0.0</string>
+	<key>webaddress</key>
+	<string></string>
+</dict>
+</plist>
