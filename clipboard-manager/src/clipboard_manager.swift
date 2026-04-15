@@ -123,6 +123,36 @@ class DataManager {
         } else {
             self.data = ClipboardData()
         }
+        // Deduplicate existing items on load
+        deduplicateItems()
+    }
+
+    /// Remove duplicate items (same content), keeping the newest one.
+    /// If any duplicate is favorited, the kept item inherits the favorite status.
+    private func deduplicateItems() {
+        var seen: [String: Int] = [:] // content -> index in result
+        var deduped: [ClipboardItem] = []
+        var changed = false
+
+        // Items are already sorted by timestamp desc, so first occurrence = newest
+        for item in data.items {
+            let key = item.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let existingIdx = seen[key] {
+                // Duplicate found: merge favorite status into the kept item
+                if item.favorite && !deduped[existingIdx].favorite {
+                    deduped[existingIdx].favorite = true
+                }
+                changed = true
+            } else {
+                seen[key] = deduped.count
+                deduped.append(item)
+            }
+        }
+
+        if changed {
+            data.items = deduped
+            save()
+        }
     }
 
     func save() {

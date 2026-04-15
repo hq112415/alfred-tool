@@ -188,6 +188,8 @@ body {
     border-bottom: 1px solid var(--border);
     gap: 10px;
     -webkit-app-region: no-drag;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
 .item:last-child {
@@ -534,6 +536,9 @@ let expandedMonths = {};  // { "2026年4月": true }
 let expandedWeeks = {};   // { "2026-15": true }
 let weekEditorSaveTimer = null;
 
+// ===== Constants =====
+const LIST_DISPLAY_LIMIT = 100; // Default display limit for list view
+
 // ===== Get current list based on tab and filter =====
 function getCurrentItems() {
     if (currentTab === 'record') {
@@ -541,9 +546,18 @@ function getCurrentItems() {
     }
     const items = currentTab === 'history' ? allData.history : allData.favorites;
     const query = document.getElementById('searchInput').value.toLowerCase().trim();
-    if (!query) return items;
-    return items.filter(item => item.content.toLowerCase().includes(query));
+    if (!query) {
+        // No search: only show the latest N items for performance
+        return items.slice(0, LIST_DISPLAY_LIMIT);
+    }
+    // Search: search ALL items, but limit results for display
+    return items.filter(item => item.content.toLowerCase().includes(query)).slice(0, LIST_DISPLAY_LIMIT);
 }
+
+// ===== Virtual Scroll Constants =====
+const ITEM_HEIGHT = 52; // Approximate item height in px
+const RENDER_BUFFER = 10; // Extra items to render above/below viewport
+let lastRenderRange = { start: -1, end: -1 };
 
 // ===== Render list =====
 function renderList() {
@@ -566,6 +580,7 @@ function renderList() {
                 <div class="empty-icon">${emptyIcon}</div>
                 <div class="empty-text">${emptyText}</div>
             </div>`;
+        lastRenderRange = { start: -1, end: -1 };
         return;
     }
 
@@ -573,17 +588,55 @@ function renderList() {
     if (selectedIndex >= filteredItems.length) selectedIndex = filteredItems.length - 1;
     if (selectedIndex < 0) selectedIndex = 0;
 
+    // Setup virtual scroll container
+    const totalHeight = filteredItems.length * ITEM_HEIGHT;
+    container.innerHTML = `<div id="virtualSpacer" style="height:${totalHeight}px;position:relative;"></div>`;
+    lastRenderRange = { start: -1, end: -1 };
+
+    // Render visible items
+    renderVisibleItems();
+
+    // Listen for scroll to update visible items
+    container.onscroll = function() {
+        renderVisibleItems();
+    };
+
+    scrollToSelected();
+}
+
+// ===== Render only visible items (virtual scroll) =====
+function renderVisibleItems() {
+    const container = document.getElementById('listContainer');
+    const spacer = document.getElementById('virtualSpacer');
+    if (!spacer || filteredItems.length === 0) return;
+
+    const scrollTop = container.scrollTop;
+    const viewHeight = container.clientHeight;
+
+    let startIdx = Math.floor(scrollTop / ITEM_HEIGHT) - RENDER_BUFFER;
+    let endIdx = Math.ceil((scrollTop + viewHeight) / ITEM_HEIGHT) + RENDER_BUFFER;
+    startIdx = Math.max(0, startIdx);
+    endIdx = Math.min(filteredItems.length, endIdx);
+
+    // Skip if range hasn't changed
+    if (startIdx === lastRenderRange.start && endIdx === lastRenderRange.end) return;
+    lastRenderRange = { start: startIdx, end: endIdx };
+
+    // Build HTML for visible items
     let html = '';
-    filteredItems.forEach((item, index) => {
+    for (let index = startIdx; index < endIdx; index++) {
+        const item = filteredItems[index];
         const isSelected = index === selectedIndex;
         const time = formatTime(item.timestamp);
         const preview = escapeHtml(item.content).replace(/\n/g, ' ↵ ');
         const charCount = item.content.length;
+        const top = index * ITEM_HEIGHT;
 
         html += `
             <div class="item ${isSelected ? 'selected' : ''}"
                  data-index="${index}"
-                 data-action="paste">
+                 data-action="paste"
+                 style="position:absolute;top:${top}px;left:0;right:0;height:${ITEM_HEIGHT}px;">
                 <div class="item-content">
                     <div class="item-text">${preview}</div>
                     <div class="item-meta">
@@ -606,10 +659,9 @@ function renderList() {
                     </button>
                 </div>
             </div>`;
-    });
+    }
 
-    container.innerHTML = html;
-    scrollToSelected();
+    spacer.innerHTML = html;
 }
 
 // ===== Render Record View (Current Week Editor + History) =====
@@ -756,15 +808,59 @@ function escapeRegex(str) {
 // ===== Scroll to keep selected item visible =====
 function scrollToSelected() {
     const container = document.getElementById('listContainer');
-    const selected = container.querySelector('.item.selected');
-    if (selected) {
-        const containerRect = container.getBoundingClientRect();
-        const itemRect = selected.getBoundingClientRect();
-        if (itemRect.top < containerRect.top) {
-            selected.scrollIntoView({ block: 'start', behavior: 'smooth' });
-        } else if (itemRect.bottom > containerRect.bottom) {
-            selected.scrollIntoView({ block: 'end', behavior: 'smooth' });
+    const targetTop = selectedIndex * ITEM_HEIGHT;
+    const targetBottom = targetTop + ITEM_HEIGHT;
+    const viewTop = container.scrollTop;
+    const viewBottom = viewTop + container.clientHeight;
+
+    if (targetTop < viewTop) {
+        container.scrollTop = targetTop;
+    } else if (targetBottom > viewBottom) {
+        container.scrollTop = targetBottom - container.clientHeight;
+    }
+}
+
+// ===== Update selection without full re-render =====
+function updateSelection(newIndex, shouldScroll) {
+    if (newIndex === selectedIndex && !shouldScroll) return;
+    const container = document.getElementById('listContainer');
+
+    // Remove old selection
+    const oldSelected = container.querySelector('.item.selected');
+    if (oldSelected) {
+        oldSelected.classList.remove('selected');
+        oldSelected.style.borderLeft = '';
+        oldSelected.style.paddingLeft = '';
+    }
+
+    const oldIndex = selectedIndex;
+    selectedIndex = newIndex;
+
+    // Add new selection
+    const newSelected = container.querySelector(`.item[data-index="${newIndex}"]`);
+    if (newSelected) {
+        newSelected.classList.add('selected');
+        newSelected.style.borderLeft = '3px solid var(--accent)';
+        newSelected.style.paddingLeft = '11px';
+    }
+
+    if (shouldScroll) {
+        const targetTop = newIndex * ITEM_HEIGHT;
+        const targetBottom = targetTop + ITEM_HEIGHT;
+        const viewTop = container.scrollTop;
+        const viewBottom = viewTop + container.clientHeight;
+
+        if (targetTop < viewTop) {
+            container.scrollTop = targetTop;
+        } else if (targetBottom > viewBottom) {
+            container.scrollTop = targetBottom - container.clientHeight;
         }
+    }
+
+    // If the new item wasn't in the DOM (out of virtual scroll range), force re-render
+    if (!newSelected) {
+        lastRenderRange = { start: -1, end: -1 };
+        renderVisibleItems();
     }
 }
 
@@ -870,8 +966,14 @@ function formatTime(timestamp) {
 }
 
 function updateCounts() {
-    document.getElementById('historyCount').textContent = allData.history.length;
-    document.getElementById('favoritesCount').textContent = allData.favorites.length;
+    const historyTotal = allData.history.length;
+    const favoritesTotal = allData.favorites.length;
+    document.getElementById('historyCount').textContent = historyTotal > LIST_DISPLAY_LIMIT
+        ? LIST_DISPLAY_LIMIT + '/' + historyTotal
+        : historyTotal;
+    document.getElementById('favoritesCount').textContent = favoritesTotal > LIST_DISPLAY_LIMIT
+        ? LIST_DISPLAY_LIMIT + '/' + favoritesTotal
+        : favoritesTotal;
 }
 
 function updateRecordCounts() {
@@ -973,8 +1075,8 @@ document.addEventListener('keydown', function(e) {
     if (e.key === 'ArrowUp') {
         e.preventDefault();
         if (currentTab !== 'record' && filteredItems.length > 0) {
-            selectedIndex = Math.max(0, selectedIndex - 1);
-            renderList();
+            const newIndex = Math.max(0, selectedIndex - 1);
+            updateSelection(newIndex, true);
         }
         return;
     }
@@ -983,8 +1085,8 @@ document.addEventListener('keydown', function(e) {
     if (e.key === 'ArrowDown') {
         e.preventDefault();
         if (currentTab !== 'record' && filteredItems.length > 0) {
-            selectedIndex = Math.min(filteredItems.length - 1, selectedIndex + 1);
-            renderList();
+            const newIndex = Math.min(filteredItems.length - 1, selectedIndex + 1);
+            updateSelection(newIndex, true);
         }
         return;
     }
@@ -1035,10 +1137,14 @@ document.getElementById('searchInput').addEventListener('keydown', function(e) {
     }
 });
 
-// Search input filtering
+// Search input filtering (with debounce)
+let searchDebounceTimer = null;
 document.getElementById('searchInput').addEventListener('input', function() {
-    selectedIndex = 0;
-    renderList();
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(function() {
+        selectedIndex = 0;
+        renderList();
+    }, 100);
 });
 
 // Request initial data
@@ -1098,8 +1204,7 @@ document.getElementById('listContainer').addEventListener('mouseover', function(
         if (clipItem) {
             const index = parseInt(clipItem.getAttribute('data-index'), 10);
             if (index !== selectedIndex) {
-                selectedIndex = index;
-                renderList();
+                updateSelection(index, false);
             }
         }
     }
