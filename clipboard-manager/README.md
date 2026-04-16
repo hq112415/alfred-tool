@@ -58,8 +58,7 @@ clipboard-manager/
 ├── install.sh                  # 编译 & 打包脚本
 └── src/
     ├── info.plist              # Alfred Workflow 配置
-    ├── clipboard_manager.swift # Swift 源码
-    └── clipboard_manager.html  # 界面 HTML
+    └── clipboard_manager.swift # Swift 源码（原生 AppKit UI）
 ```
 
 ## 💾 数据存储
@@ -78,7 +77,8 @@ clipboard-manager/
 
 ## 🛠 技术说明
 
-- Swift 原生应用，WKWebView 渲染界面
+- Swift 原生应用，**纯 AppKit UI**（NSTableView + NSSearchField + NSTextView）
+- 无 WebView 依赖，内存占用仅 ~10-15MB（对比旧版 WKWebView 方案 ~150MB）
 - 0.5 秒轮询监听系统剪切板变化
 - CGEvent 模拟键盘按键实现粘贴
 - 数据以 JSON 格式存储

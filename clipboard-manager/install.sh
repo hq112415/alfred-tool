@@ -23,7 +23,6 @@ cd "$SRC_DIR"
 swiftc clipboard_manager.swift \
     -o clipboard_manager \
     -framework Cocoa \
-    -framework WebKit \
     -framework Carbon \
     -O \
     -suppress-warnings
@@ -40,7 +39,6 @@ rm -f "$OUTPUT"
 zip -r "$OUTPUT" \
     info.plist \
     clipboard_manager \
-    clipboard_manager.html \
     -x ".*" "*.swift"
 
 echo ""

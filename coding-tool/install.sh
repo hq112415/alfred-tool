@@ -23,7 +23,6 @@ cd "$SRC_DIR"
 swiftc coding_tool.swift \
     -o coding_tool \
     -framework Cocoa \
-    -framework WebKit \
     -O \
     -suppress-warnings
 echo "✅ 编译成功"
@@ -35,9 +34,8 @@ rm -f "$OUTPUT"
 zip -r "$OUTPUT" \
     info.plist \
     coding_tool \
-    coding_tool.html \
     icon.png \
-    -x ".*" "*.swift"
+    -x ".*" "*.swift" "*.html"
 
 echo ""
 echo "✅ 打包完成: $OUTPUT"
