@@ -39,7 +39,26 @@ zip -r "$OUTPUT" \
 
 echo ""
 echo "✅ 打包完成: $OUTPUT"
-echo ""
-echo "📌 下一步:"
-echo "   双击 CodingTool.alfredworkflow 导入 Alfred"
-echo "   唤起 Alfred → 输入 ct → 回车"
+
+# 自动同步到 Alfred workflow 目录（如果已安装）
+ALFRED_WORKFLOW_DIR="$HOME/Library/Application Support/Alfred/Alfred.alfredpreferences/workflows"
+if [ -d "$ALFRED_WORKFLOW_DIR" ]; then
+    INSTALLED=$(find "$ALFRED_WORKFLOW_DIR" -name "coding_tool" -type f 2>/dev/null | head -1)
+    if [ -n "$INSTALLED" ]; then
+        DEST_DIR=$(dirname "$INSTALLED")
+        cp "$SRC_DIR/coding_tool" "$DEST_DIR/coding_tool"
+        echo "🔄 已自动同步到 Alfred: $DEST_DIR"
+        echo ""
+        echo "📌 下次唤起 ct 即使用最新版本（如有旧进程在运行，需先关闭）"
+    else
+        echo ""
+        echo "📌 下一步:"
+        echo "   双击 CodingTool.alfredworkflow 导入 Alfred"
+        echo "   唤起 Alfred → 输入 ct → 回车"
+    fi
+else
+    echo ""
+    echo "📌 下一步:"
+    echo "   双击 CodingTool.alfredworkflow 导入 Alfred"
+    echo "   唤起 Alfred → 输入 ct → 回车"
+fi

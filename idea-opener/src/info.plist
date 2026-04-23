@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>bundleid</key>
+	<string>com.alfred.idea-opener</string>
+	<key>connections</key>
+	<dict>
+		<key>83F394C6-E6AF-4243-A7D5-2E4DD0918189</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>870DEC77-6E0E-477E-94CF-9B66FCA5FCC9</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+	</dict>
+	<key>createdby</key>
+	<string>huqiang</string>
+	<key>description</key>
+	<string>快速用 IDEA 打开 Java/Go 项目</string>
+	<key>disabled</key>
+	<false/>
+	<key>name</key>
+	<string>IdeaOpener</string>
+	<key>objects</key>
+	<array>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>alfredfiltersresults</key>
+				<false/>
+				<key>alfredfiltersresultsmatchmode</key>
+				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<true/>
+				<key>argumenttrimmode</key>
+				<integer>0</integer>
+				<key>argumenttype</key>
+				<integer>1</integer>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>keyword</key>
+				<string>idea</string>
+				<key>queuedelaycustom</key>
+				<integer>3</integer>
+				<key>queuedelayimmediatelyinitially</key>
+				<true/>
+				<key>queuedelaymode</key>
+				<integer>0</integer>
+				<key>queuemode</key>
+				<integer>1</integer>
+				<key>runningsubtext</key>
+				<string>搜索中...</string>
+				<key>script</key>
+				<string>python3 search.py $1</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>subtext</key>
+				<string>输入关键词搜索 Java/Go 项目</string>
+				<key>title</key>
+				<string>用 IDEA 打开项目</string>
+				<key>type</key>
+				<integer>5</integer>
+				<key>withspace</key>
+				<true/>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.input.scriptfilter</string>
+			<key>uid</key>
+			<string>83F394C6-E6AF-4243-A7D5-2E4DD0918189</string>
+			<key>version</key>
+			<integer>3</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>concurrently</key>
+				<false/>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>script</key>
+				<string>/Applications/IntelliJ\ IDEA.app/Contents/MacOS/idea "$1"</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>type</key>
+				<integer>5</integer>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.action.script</string>
+			<key>uid</key>
+			<string>870DEC77-6E0E-477E-94CF-9B66FCA5FCC9</string>
+			<key>version</key>
+			<integer>2</integer>
+		</dict>
+	</array>
+	<key>readme</key>
+	<string>## IdeaOpener
+
+通过 Alfred 快速用 IntelliJ IDEA 打开 Java/Go 项目。
+
+### 使用方法
+
+- `idea` + 空格 → 显示最近打开的项目
+- `idea` + 关键词 → 搜索项目
+
+搜索范围: /Users/huqiang/soft/java_project（第1、2级目录）
+搜索条件: 含 pom.xml 或 go.mod 的目录</string>
+	<key>uidata</key>
+	<dict>
+		<key>83F394C6-E6AF-4243-A7D5-2E4DD0918189</key>
+		<dict>
+			<key>xpos</key>
+			<real>155</real>
+			<key>ypos</key>
+			<real>150</real>
+		</dict>
+		<key>870DEC77-6E0E-477E-94CF-9B66FCA5FCC9</key>
+		<dict>
+			<key>xpos</key>
+			<real>560</real>
+			<key>ypos</key>
+			<real>150</real>
+		</dict>
+	</dict>
+	<key>variablesdontexport</key>
+	<array/>
+	<key>version</key>
+	<string>1.0</string>
+</dict>
+</plist>

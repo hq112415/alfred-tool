@@ -104,6 +104,7 @@ class ConfigManager {
 class DataManager {
     static let shared = DataManager()
     var data: ClipboardData
+    private let saveQueue = DispatchQueue(label: "com.clipboardmanager.save", qos: .utility)
 
     private init() {
         try? FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
@@ -141,8 +142,11 @@ class DataManager {
     }
 
     func save() {
-        if let jsonData = try? JSONEncoder().encode(data) {
-            try? jsonData.write(to: URL(fileURLWithPath: dataFile))
+        let snapshot = data
+        saveQueue.async {
+            if let jsonData = try? JSONEncoder().encode(snapshot) {
+                try? jsonData.write(to: URL(fileURLWithPath: dataFile))
+            }
         }
     }
 
@@ -498,10 +502,12 @@ class MainViewController: NSViewController, NSTableViewDelegate, NSTableViewData
     var onHideWindow: (() -> Void)?
 
     // 搜索防抖
-    private var searchDebounceTimer: Timer?
+    var searchDebounceTimer: Timer?
     // 缓存排好序的数据，避免每次 filter/sort
     private var cachedHistoryItems: [ClipboardItem]?
     private var cachedFavoriteItems: [ClipboardItem]?
+    // 异步搜索版本号，防止旧结果覆盖新结果
+    private var searchVersion: Int = 0
 
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 680, height: 492))
@@ -695,19 +701,36 @@ class MainViewController: NSViewController, NSTableViewDelegate, NSTableViewData
 
     func reloadData() {
         let items = currentTabItems()
-
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if query.isEmpty {
-            filteredItems = Array(items.prefix(listDisplayLimit))
-        } else {
-            filteredItems = items.filter { $0.content.range(of: query, options: .caseInsensitive) != nil }
-            filteredItems = Array(filteredItems.prefix(listDisplayLimit))
-        }
 
+        if query.isEmpty {
+            // 无搜索词，直接在主线程处理
+            filteredItems = Array(items.prefix(listDisplayLimit))
+            applyFilterResult()
+        } else {
+            // 有搜索词，异步过滤
+            searchVersion += 1
+            let version = searchVersion
+            let limit = listDisplayLimit
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let filtered = items.filter { $0.content.range(of: query, options: .caseInsensitive) != nil }
+                let result = Array(filtered.prefix(limit))
+                DispatchQueue.main.async {
+                    guard let self = self, self.searchVersion == version else { return }
+                    self.filteredItems = result
+                    self.applyFilterResult()
+                }
+            }
+        }
+    }
+
+    /// 将 filteredItems 应用到 UI（主线程）
+    private func applyFilterResult() {
         if selectedIndex >= filteredItems.count {
             selectedIndex = max(0, filteredItems.count - 1)
         }
 
+        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if filteredItems.isEmpty {
             scrollView.isHidden = true
             emptyStateView.isHidden = false
@@ -849,7 +872,7 @@ class MainViewController: NSViewController, NSTableViewDelegate, NSTableViewData
 extension MainViewController: NSSearchFieldDelegate {
     func controlTextDidChange(_ obj: Notification) {
         searchDebounceTimer?.invalidate()
-        searchDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { [weak self] _ in
+        searchDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { [weak self] _ in
             self?.selectedIndex = 0
             self?.reloadData()
         }
@@ -1191,6 +1214,7 @@ class ClipboardApp: NSApplication {
 
             // Enter - paste selected item
             if event.keyCode == 36 {
+                mainVC.searchDebounceTimer?.invalidate()
                 if mainVC.selectedIndex < mainVC.filteredItems.count {
                     let item = mainVC.filteredItems[mainVC.selectedIndex]
                     DataManager.shared.useItem(id: item.id)

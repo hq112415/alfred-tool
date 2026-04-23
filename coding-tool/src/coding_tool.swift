@@ -259,7 +259,7 @@ class MainVC: NSViewController {
         indicatorW = indicator.widthAnchor.constraint(equalTo: btn.widthAnchor)
         indicatorLead?.isActive = true; indicatorW?.isActive = true
         if i == 0 { view.window?.makeFirstResponder(jsonVC.inputTV) }
-        else { view.window?.makeFirstResponder(tsVC.toDateInput) }
+        else { view.window?.makeFirstResponder(tsVC.toDateRows.first?.input) }
     }
 
     @objc func tabClick(_ s: NSButton) { switchTab(s.tag) }
@@ -349,10 +349,23 @@ class JSONVC: NSViewController, NSTextViewDelegate {
     var isValid = false
     var indentSize = 2
     var searchMatches: [NSRange] = []
+    var inputSearchMatches: [NSRange] = []
     var searchIdx = -1
+    /// true = current match is in output, false = in input
+    var searchInOutput = true
+    var lastSearchQuery = ""
     var searchHighlightColor = NSColor(calibratedRed: 0.996, green: 0.941, blue: 0.424, alpha: 1)
     var searchCurrentColor = NSColor(calibratedRed: 0.984, green: 0.573, blue: 0.235, alpha: 1)
     var formatDebounceTimer: Timer?
+    /// Foldable region: stores line ranges that can be collapsed
+    struct FoldRegion {
+        let startLine: Int   // line index (0-based) where { or [ is
+        let endLine: Int     // line index (0-based) where matching } or ] is
+        var collapsed: Bool  // whether this region is currently collapsed
+    }
+    var foldRegions: [FoldRegion] = []
+    /// The full formatted lines (before folding)
+    var fullFormattedLines: [String] = []
 
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 1100, height: 650))
@@ -373,7 +386,6 @@ class JSONVC: NSViewController, NSTextViewDelegate {
         hLine.translatesAutoresizingMaskIntoConstraints = false; headerV.addSubview(hLine)
 
         let btns: [(String, Selector)] = [
-            ("📄 复制", #selector(copyOutput)),
             ("✨ 格式化", #selector(formatJSON)),
             ("📦 删除空格", #selector(minifyJSON)),
             ("🔒 删除空格并转义", #selector(minifyAndEscape)),
@@ -382,6 +394,7 @@ class JSONVC: NSViewController, NSTextViewDelegate {
         let rightBtns: [(String, Selector)] = [
             ("📋 示例", #selector(loadSample)),
             ("🗑 清空", #selector(clearAll)),
+            ("📄 复制", #selector(copyOutput)),
         ]
 
         var lastA: NSLayoutXAxisAnchor = headerV.leadingAnchor
@@ -575,7 +588,7 @@ class JSONVC: NSViewController, NSTextViewDelegate {
         gutterScroll.borderType = .noBorder; gutterScroll.drawsBackground = true
         gutterScroll.backgroundColor = T.bg; gutterScroll.translatesAutoresizingMaskIntoConstraints = false
         gutterTV = NSTextView(); gutterTV.isEditable = false; gutterTV.isSelectable = false
-        gutterTV.isRichText = false; gutterTV.font = T.monoSm; gutterTV.textColor = T.t3
+        gutterTV.isRichText = true; gutterTV.font = T.monoSm; gutterTV.textColor = T.t3
         gutterTV.backgroundColor = T.bg; gutterTV.textContainerInset = NSSize(width: 8, height: 14)
         gutterTV.isAutomaticQuoteSubstitutionEnabled = false
         gutterTV.minSize = NSSize(width: 0, height: 0)
@@ -583,7 +596,7 @@ class JSONVC: NSViewController, NSTextViewDelegate {
         gutterTV.isVerticallyResizable = true; gutterTV.isHorizontallyResizable = false
         gutterTV.autoresizingMask = [.width]
         gutterTV.textContainer?.widthTracksTextView = true
-        gutterTV.textContainer?.containerSize = NSSize(width: 44, height: CGFloat.greatestFiniteMagnitude)
+        gutterTV.textContainer?.containerSize = NSSize(width: 56, height: CGFloat.greatestFiniteMagnitude)
         gutterScroll.documentView = gutterTV; outWrapper.addSubview(gutterScroll)
 
         outputScroll = NSScrollView(); outputScroll.hasVerticalScroller = true
@@ -610,6 +623,10 @@ class JSONVC: NSViewController, NSTextViewDelegate {
         // Sync gutter scroll with output
         outputScroll.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(self, selector: #selector(outputScrolled), name: NSView.boundsDidChangeNotification, object: outputScroll.contentView)
+
+        // Gutter click for fold/unfold
+        let gutterClick = NSClickGestureRecognizer(target: self, action: #selector(gutterClicked(_:)))
+        gutterTV.addGestureRecognizer(gutterClick)
 
         // ---- Status Bar ----
         statusV.wantsLayer = true; statusV.layer?.backgroundColor = T.bgCard.cgColor
@@ -775,7 +792,7 @@ class JSONVC: NSViewController, NSTextViewDelegate {
 
             gutterScroll.topAnchor.constraint(equalTo: outWrapper.topAnchor),
             gutterScroll.leadingAnchor.constraint(equalTo: outWrapper.leadingAnchor),
-            gutterScroll.widthAnchor.constraint(equalToConstant: 44),
+            gutterScroll.widthAnchor.constraint(equalToConstant: 56),
             gutterScroll.bottomAnchor.constraint(equalTo: outWrapper.bottomAnchor),
 
             outputScroll.topAnchor.constraint(equalTo: outWrapper.topAnchor),
@@ -831,6 +848,13 @@ class JSONVC: NSViewController, NSTextViewDelegate {
         gutterScroll.contentView.scroll(outputScroll.contentView.bounds.origin)
     }
 
+    @objc func gutterClicked(_ g: NSClickGestureRecognizer) {
+        let point = g.location(in: gutterTV)
+        if let origLine = originalLineForGutterClick(at: point) {
+            toggleFoldAtLine(origLine)
+        }
+    }
+
     @objc func indentChanged(_ s: NSPopUpButton) {
         switch s.indexOfSelectedItem {
         case 0: indentSize = 2
@@ -873,7 +897,8 @@ class JSONVC: NSViewController, NSTextViewDelegate {
         // 先尝试标准解析
         if let parsed = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) {
             lastParsed = parsed; isValid = true
-            let formatted = prettyPrint(parsed, indent: indentStr)
+            let keyOrder = extractKeyOrder(from: input)
+            let formatted = prettyPrint(parsed, indent: indentStr, keyOrder: keyOrder)
             lastFormatted = formatted
             displayOutput(formatted)
             errorBanner.isHidden = true
@@ -885,7 +910,7 @@ class JSONVC: NSViewController, NSTextViewDelegate {
         // 标准解析失败，尝试宽容修复
         if let (repaired, parsed) = tryRepairJSON(input) {
             lastParsed = parsed; isValid = true
-            let formatted = prettyPrint(parsed, indent: indentStr)
+            let formatted = prettyPrint(parsed, indent: indentStr, keyOrder: nil)
             lastFormatted = formatted
             displayOutput(formatted)
             errorL.stringValue = "⚠ 已自动修复: \(repaired)"
@@ -916,7 +941,8 @@ class JSONVC: NSViewController, NSTextViewDelegate {
         // 先尝试标准解析
         if let parsed = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) {
             lastParsed = parsed; isValid = true
-            let formatted = prettyPrint(parsed, indent: indentStr)
+            let keyOrder = extractKeyOrder(from: input)
+            let formatted = prettyPrint(parsed, indent: indentStr, keyOrder: keyOrder)
             lastFormatted = formatted
             displayOutput(formatted)
             errorBanner.isHidden = true
@@ -929,7 +955,7 @@ class JSONVC: NSViewController, NSTextViewDelegate {
         // 标准解析失败，尝试宽容修复
         if let (repaired, parsed) = tryRepairJSON(input) {
             lastParsed = parsed; isValid = true
-            let formatted = prettyPrint(parsed, indent: indentStr)
+            let formatted = prettyPrint(parsed, indent: indentStr, keyOrder: nil)
             lastFormatted = formatted
             displayOutput(formatted)
             errorL.stringValue = "⚠ 已自动修复: \(repaired)"
@@ -1096,11 +1122,198 @@ class JSONVC: NSViewController, NSTextViewDelegate {
     }
 
     func displayOutput(_ json: String) {
-        let attr = highlight(json)
+        fullFormattedLines = json.components(separatedBy: "\n")
+        // Build fold regions from the formatted output
+        foldRegions = buildFoldRegions(from: fullFormattedLines)
+        renderWithFolding()
+    }
+
+    /// Build fold regions by finding matching bracket pairs
+    func buildFoldRegions(from lines: [String]) -> [FoldRegion] {
+        var regions: [FoldRegion] = []
+        var stack: [(line: Int, char: Character)] = []
+        for (i, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            // Check for opening brackets at the end of a line
+            if trimmed.hasSuffix("{") || trimmed.hasSuffix("[") {
+                let lastChar: Character = trimmed.hasSuffix("{") ? "{" : "["
+                stack.append((line: i, char: lastChar))
+            }
+            // Check for closing brackets
+            let firstNonSpace = trimmed.first
+            if firstNonSpace == "}" || firstNonSpace == "]" {
+                if let last = stack.last {
+                    let matching: Character = last.char == "{" ? "}" : "]"
+                    if firstNonSpace == matching {
+                        stack.removeLast()
+                        if i > last.line { // Only create region if more than one line
+                            regions.append(FoldRegion(startLine: last.line, endLine: i, collapsed: false))
+                        }
+                    }
+                }
+            }
+        }
+        return regions
+    }
+
+    /// Render the output considering fold states
+    func renderWithFolding() {
+        // Determine which lines are hidden due to folding
+        var hiddenLines = Set<Int>()
+        // Sort fold regions by startLine for consistent processing
+        let sortedRegions = foldRegions.enumerated().sorted { $0.element.startLine < $1.element.startLine }
+        for (_, region) in sortedRegions {
+            if region.collapsed {
+                // Hide lines from startLine+1 to endLine (inclusive)
+                for line in (region.startLine + 1)...region.endLine {
+                    hiddenLines.insert(line)
+                }
+            }
+        }
+
+        // Build visible text
+        var visibleLines: [String] = []
+        var visibleLineNumbers: [Int] = [] // original 1-based line numbers
+        var gutterSymbols: [String] = []
+
+        for (i, line) in fullFormattedLines.enumerated() {
+            if hiddenLines.contains(i) { continue }
+
+            // Check if this line starts a collapsed region
+            let collapsedRegion = foldRegions.first { $0.startLine == i && $0.collapsed }
+            if let region = collapsedRegion {
+                // Show the opening line with a collapse indicator
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                let isArray = trimmed.hasSuffix("[")
+                let closingBracket: String = isArray ? "]" : "}"
+                // Find if closing bracket has a comma
+                let closingLine = fullFormattedLines[region.endLine].trimmingCharacters(in: .whitespaces)
+                let trailingComma = closingLine.hasSuffix(",") ? "," : ""
+                // Count children for the collapsed region
+                let childCount = countDirectChildren(startLine: region.startLine, endLine: region.endLine)
+                let summary: String
+                if isArray {
+                    summary = " \(childCount) items "
+                } else {
+                    summary = " \(childCount) keys "
+                }
+                let collapsedLine = line + summary + closingBracket + trailingComma
+                visibleLines.append(collapsedLine)
+            } else {
+                visibleLines.append(line)
+            }
+            visibleLineNumbers.append(i + 1)
+
+            // Gutter symbol
+            let foldable = foldRegions.first { $0.startLine == i }
+            if let fr = foldable {
+                gutterSymbols.append(fr.collapsed ? "▶" : "▼")
+            } else {
+                gutterSymbols.append("")
+            }
+        }
+
+        let displayText = visibleLines.joined(separator: "\n")
+        let attr = highlight(displayText)
+
+        // Style the fold summary text (e.g., "3 items", "5 keys") in collapsed lines
+        let displayNS = displayText as NSString
+        for (_, region) in foldRegions.enumerated() where region.collapsed {
+            // Find the collapsed summary pattern in display text
+            let patterns = ["items", "keys"]
+            for pat in patterns {
+                // Search for " N pat " pattern (N is a number)
+                if let regex = try? NSRegularExpression(pattern: " \\d+ \(pat) ", options: []) {
+                    let matches = regex.matches(in: displayText, options: [], range: NSRange(location: 0, length: displayNS.length))
+                    for m in matches {
+                        attr.addAttribute(.foregroundColor, value: T.t3, range: m.range)
+                        attr.addAttribute(.font, value: NSFont.systemFont(ofSize: 12, weight: .regular), range: m.range)
+                    }
+                }
+            }
+        }
+
         outputTV.textStorage?.setAttributedString(attr)
-        let lines = json.components(separatedBy: "\n")
-        outputSizeL.stringValue = "\(lines.count) lines"
-        updateGutter(lines.count)
+        outputSizeL.stringValue = "\(fullFormattedLines.count) lines"
+
+        // Build gutter with fold indicators using attributed string
+        let gutterAttr = NSMutableAttributedString()
+        let gutterFont = T.monoSm
+        let normalAttrs: [NSAttributedString.Key: Any] = [.font: gutterFont, .foregroundColor: T.t3]
+        let foldIconFont = NSFont.systemFont(ofSize: 14, weight: .bold)
+        let expandedAttrs: [NSAttributedString.Key: Any] = [
+            .font: foldIconFont,
+            .foregroundColor: T.accent
+        ]
+        let collapsedAttrs: [NSAttributedString.Key: Any] = [
+            .font: foldIconFont,
+            .foregroundColor: T.peach
+        ]
+
+        for (idx, lineNum) in visibleLineNumbers.enumerated() {
+            let symbol = gutterSymbols[idx]
+            if !symbol.isEmpty {
+                let icon = symbol == "▼" ? "⌵" : "›"
+                let iconAttrs = symbol == "▼" ? expandedAttrs : collapsedAttrs
+                gutterAttr.append(NSAttributedString(string: icon, attributes: iconAttrs))
+                gutterAttr.append(NSAttributedString(string: "\(lineNum)\n", attributes: normalAttrs))
+            } else {
+                gutterAttr.append(NSAttributedString(string: " \(lineNum)\n", attributes: normalAttrs))
+            }
+        }
+        gutterTV.textStorage?.setAttributedString(gutterAttr)
+    }
+
+    /// Count direct children in a fold region (items in array, or keys in object)
+    func countDirectChildren(startLine: Int, endLine: Int) -> Int {
+        // We need to count top-level items between startLine and endLine
+        // by tracking bracket nesting depth
+        var count = 0
+        var depth = 0
+        for lineIdx in (startLine + 1)..<endLine {
+            let trimmed = fullFormattedLines[lineIdx].trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            // At depth 0, each non-bracket line (or line that starts content) is a child
+            if depth == 0 {
+                count += 1
+            }
+            // Track nesting: count opening and closing brackets
+            for ch in trimmed {
+                if ch == "{" || ch == "[" { depth += 1 }
+                else if ch == "}" || ch == "]" { depth -= 1 }
+            }
+        }
+        return count
+    }
+
+    /// Toggle fold at a given visible line index
+    func toggleFoldAtLine(_ originalLineIdx: Int) {
+        guard let regionIdx = foldRegions.firstIndex(where: { $0.startLine == originalLineIdx }) else { return }
+        foldRegions[regionIdx].collapsed.toggle()
+        renderWithFolding()
+        // Refresh search if active
+        if !lastSearchQuery.isEmpty { refreshSearchHighlights() }
+    }
+
+    /// Map a click in gutter to the original line index
+    func originalLineForGutterClick(at point: NSPoint) -> Int? {
+        // Get the character index at the click point in gutterTV
+        guard let layoutManager = gutterTV.layoutManager,
+              let textContainer = gutterTV.textContainer else { return nil }
+        let textPoint = NSPoint(x: point.x - gutterTV.textContainerInset.width,
+                                y: point.y - gutterTV.textContainerInset.height)
+        let charIdx = layoutManager.characterIndex(for: textPoint, in: textContainer, fractionOfDistanceBetweenInsertionPoints: nil)
+        let gutterStr = gutterTV.string as NSString
+        if charIdx >= gutterStr.length { return nil }
+
+        // Find which line this character is on
+        let lineRange = gutterStr.lineRange(for: NSRange(location: charIdx, length: 0))
+        let lineStr = gutterStr.substring(with: lineRange).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Extract the line number (remove fold symbols)
+        let cleaned = lineStr.replacingOccurrences(of: "›", with: "").replacingOccurrences(of: "⌵", with: "").trimmingCharacters(in: .whitespaces)
+        guard let lineNum = Int(cleaned) else { return nil }
+        return lineNum - 1 // Convert to 0-based
     }
 
     func updateGutter(_ count: Int) {
@@ -1115,10 +1328,10 @@ class JSONVC: NSViewController, NSTextViewDelegate {
         guard let data = input.data(using: .utf8) else { return }
         do {
             let parsed = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
-            let minData = try JSONSerialization.data(withJSONObject: parsed, options: [.sortedKeys, .fragmentsAllowed])
+            let minData = try JSONSerialization.data(withJSONObject: parsed, options: [.fragmentsAllowed])
             let minified = String(data: minData, encoding: .utf8) ?? ""
-            lastFormatted = minified; lastParsed = parsed; isValid = true
-            displayOutput(minified)
+            inputTV.string = minified
+            textDidChange(Notification(name: NSText.didChangeNotification, object: inputTV))
             errorBanner.isHidden = true
             statusDot.layer?.backgroundColor = T.green.cgColor
             statusL.stringValue = "✓ 已删除空格"
@@ -1132,15 +1345,13 @@ class JSONVC: NSViewController, NSTextViewDelegate {
         guard let data = input.data(using: .utf8) else { return }
         do {
             let parsed = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
-            let minData = try JSONSerialization.data(withJSONObject: parsed, options: [.sortedKeys, .fragmentsAllowed])
+            let minData = try JSONSerialization.data(withJSONObject: parsed, options: [.fragmentsAllowed])
             let minified = String(data: minData, encoding: .utf8) ?? ""
             guard let escData = try? JSONSerialization.data(withJSONObject: minified, options: [.fragmentsAllowed]) else { return }
             var escaped = String(data: escData, encoding: .utf8) ?? ""
             if escaped.hasPrefix("\"") && escaped.hasSuffix("\"") { escaped = String(escaped.dropFirst().dropLast()) }
-            lastFormatted = escaped; lastParsed = parsed; isValid = true
-            let attr = NSMutableAttributedString(string: escaped, attributes: [.font: T.mono, .foregroundColor: T.t1])
-            outputTV.textStorage?.setAttributedString(attr)
-            outputSizeL.stringValue = "1 lines"; updateGutter(1)
+            inputTV.string = escaped
+            textDidChange(Notification(name: NSText.didChangeNotification, object: inputTV))
             errorBanner.isHidden = true
             statusDot.layer?.backgroundColor = T.green.cgColor
             statusL.stringValue = "✓ 已删除空格并转义"
@@ -1192,6 +1403,7 @@ class JSONVC: NSViewController, NSTextViewDelegate {
         outputTV.textStorage?.setAttributedString(NSAttributedString(string: ""))
         gutterTV.string = ""
         lastFormatted = ""; lastParsed = nil; isValid = false
+        foldRegions = []; fullFormattedLines = []
         inputSizeL.stringValue = "0 chars"; outputSizeL.stringValue = "0 lines"
         errorBanner.isHidden = true
         statusDot.layer?.backgroundColor = T.t3.cgColor
@@ -1216,8 +1428,19 @@ class JSONVC: NSViewController, NSTextViewDelegate {
         formatJSON()
     }
 
-    @objc func expandAll() { showToast("全部展开") }
-    @objc func collapseAll() { showToast("全部折叠") }
+    @objc func expandAll() {
+        for i in 0..<foldRegions.count { foldRegions[i].collapsed = false }
+        renderWithFolding()
+        if !lastSearchQuery.isEmpty { refreshSearchHighlights() }
+        showToast("全部展开")
+    }
+    @objc func collapseAll() {
+        // Only collapse top-level regions (regions not contained within another region)
+        for i in 0..<foldRegions.count { foldRegions[i].collapsed = true }
+        renderWithFolding()
+        if !lastSearchQuery.isEmpty { refreshSearchHighlights() }
+        showToast("全部折叠")
+    }
 
     // MARK: - Search
     @objc func openSearch() {
@@ -1226,58 +1449,179 @@ class JSONVC: NSViewController, NSTextViewDelegate {
     }
     @objc func closeSearch() {
         searchBar.isHidden = true
-        searchMatches = []; searchIdx = -1; searchInfoL.stringValue = ""
+        searchMatches = []; inputSearchMatches = []; searchIdx = -1; searchInfoL.stringValue = ""
+        lastSearchQuery = ""
         clearSearchHighlights()
     }
     @objc func performSearch() {
-        clearSearchHighlights()
         let q = searchField.stringValue.trimmingCharacters(in: .whitespaces)
-        if q.isEmpty { searchMatches = []; searchIdx = -1; searchInfoL.stringValue = ""; return }
-        let text = outputTV.string as NSString
+        if q.isEmpty { clearSearchHighlights(); searchMatches = []; inputSearchMatches = []; searchIdx = -1; lastSearchQuery = ""; searchInfoL.stringValue = ""; return }
+        // If same query and already have results, jump to next match
+        if q == lastSearchQuery && (searchMatches.count + inputSearchMatches.count) > 0 {
+            searchNext()
+            return
+        }
+        lastSearchQuery = q
+        clearSearchHighlights()
+        // Search in output
+        let outText = outputTV.string as NSString
         let qLower = q.lowercased()
-        let textLower = text.lowercased as NSString
+        let outTextLower = outText.lowercased as NSString
         searchMatches = []; var pos = 0
         while true {
-            let found = textLower.range(of: qLower, options: [], range: NSRange(location: pos, length: textLower.length - pos))
+            let found = outTextLower.range(of: qLower, options: [], range: NSRange(location: pos, length: outTextLower.length - pos))
             if found.location == NSNotFound { break }
             searchMatches.append(found); pos = found.location + found.length
         }
-        if searchMatches.isEmpty {
-            searchIdx = -1; searchInfoL.stringValue = "无结果"
+        // Search in input
+        let inText = inputTV.string as NSString
+        let inTextLower = inText.lowercased as NSString
+        inputSearchMatches = []; pos = 0
+        while true {
+            let found = inTextLower.range(of: qLower, options: [], range: NSRange(location: pos, length: inTextLower.length - pos))
+            if found.location == NSNotFound { break }
+            inputSearchMatches.append(found); pos = found.location + found.length
+        }
+        let total = searchMatches.count + inputSearchMatches.count
+        if total == 0 {
+            searchIdx = -1; searchInOutput = true; searchInfoL.stringValue = "无结果"
         } else {
-            searchIdx = 0; highlightSearchMatches(); searchInfoL.stringValue = "1 / \(searchMatches.count)"
-            scrollToSearchMatch(0)
+            searchIdx = 0
+            // Start with output matches if available, otherwise input
+            searchInOutput = !searchMatches.isEmpty
+            highlightSearchMatches()
+            let info = searchInOutput ? "1 / \(total) (右)" : "1 / \(total) (左)"
+            searchInfoL.stringValue = info
+            scrollToCurrentMatch()
         }
     }
     @objc func searchNext() {
-        if searchMatches.isEmpty { return }
-        searchIdx = (searchIdx + 1) % searchMatches.count
-        highlightSearchMatches(); searchInfoL.stringValue = "\(searchIdx+1) / \(searchMatches.count)"
-        scrollToSearchMatch(searchIdx)
+        let total = searchMatches.count + inputSearchMatches.count
+        if total == 0 { return }
+        // Navigate: output matches first, then input matches
+        if searchInOutput {
+            if searchIdx + 1 < searchMatches.count {
+                searchIdx += 1
+            } else {
+                // Switch to input matches
+                if !inputSearchMatches.isEmpty {
+                    searchInOutput = false; searchIdx = 0
+                } else {
+                    searchIdx = 0 // wrap around output
+                }
+            }
+        } else {
+            if searchIdx + 1 < inputSearchMatches.count {
+                searchIdx += 1
+            } else {
+                // Switch to output matches
+                if !searchMatches.isEmpty {
+                    searchInOutput = true; searchIdx = 0
+                } else {
+                    searchIdx = 0 // wrap around input
+                }
+            }
+        }
+        highlightSearchMatches()
+        let globalIdx = searchInOutput ? searchIdx : searchMatches.count + searchIdx
+        let side = searchInOutput ? "右" : "左"
+        searchInfoL.stringValue = "\(globalIdx + 1) / \(total) (\(side))"
+        scrollToCurrentMatch()
     }
     @objc func searchPrev() {
-        if searchMatches.isEmpty { return }
-        searchIdx = (searchIdx - 1 + searchMatches.count) % searchMatches.count
-        highlightSearchMatches(); searchInfoL.stringValue = "\(searchIdx+1) / \(searchMatches.count)"
-        scrollToSearchMatch(searchIdx)
+        let total = searchMatches.count + inputSearchMatches.count
+        if total == 0 { return }
+        if searchInOutput {
+            if searchIdx > 0 {
+                searchIdx -= 1
+            } else {
+                // Switch to input matches (last one)
+                if !inputSearchMatches.isEmpty {
+                    searchInOutput = false; searchIdx = inputSearchMatches.count - 1
+                } else {
+                    searchIdx = searchMatches.count - 1 // wrap around output
+                }
+            }
+        } else {
+            if searchIdx > 0 {
+                searchIdx -= 1
+            } else {
+                // Switch to output matches (last one)
+                if !searchMatches.isEmpty {
+                    searchInOutput = true; searchIdx = searchMatches.count - 1
+                } else {
+                    searchIdx = inputSearchMatches.count - 1 // wrap around input
+                }
+            }
+        }
+        highlightSearchMatches()
+        let globalIdx = searchInOutput ? searchIdx : searchMatches.count + searchIdx
+        let side = searchInOutput ? "右" : "左"
+        searchInfoL.stringValue = "\(globalIdx + 1) / \(total) (\(side))"
+        scrollToCurrentMatch()
     }
     func highlightSearchMatches() {
-        let storage = outputTV.textStorage ?? NSTextStorage()
-        // Reset to base colors
-        let text = outputTV.string
-        storage.setAttributedString(highlight(text))
+        // Highlight output matches
+        let outStorage = outputTV.textStorage ?? NSTextStorage()
+        let outText = outputTV.string
+        outStorage.setAttributedString(highlight(outText))
         for (i, r) in searchMatches.enumerated() {
-            storage.addAttribute(.backgroundColor, value: i == searchIdx ? searchCurrentColor : searchHighlightColor, range: r)
+            let isCurrent = searchInOutput && i == searchIdx
+            outStorage.addAttribute(.backgroundColor, value: isCurrent ? searchCurrentColor : searchHighlightColor, range: r)
+        }
+        // Highlight input matches
+        let inStorage = inputTV.textStorage ?? NSTextStorage()
+        let inText = inputTV.string
+        inStorage.setAttributedString(NSMutableAttributedString(string: inText, attributes: [.font: T.mono, .foregroundColor: T.t1]))
+        for (i, r) in inputSearchMatches.enumerated() {
+            let isCurrent = !searchInOutput && i == searchIdx
+            inStorage.addAttribute(.backgroundColor, value: isCurrent ? searchCurrentColor : searchHighlightColor, range: r)
         }
     }
     func clearSearchHighlights() {
-        let text = outputTV.string
-        if !text.isEmpty { outputTV.textStorage?.setAttributedString(highlight(text)) }
+        let outText = outputTV.string
+        if !outText.isEmpty { outputTV.textStorage?.setAttributedString(highlight(outText)) }
+        let inText = inputTV.string
+        if !inText.isEmpty {
+            inputTV.textStorage?.setAttributedString(NSMutableAttributedString(string: inText, attributes: [.font: T.mono, .foregroundColor: T.t1]))
+        }
     }
-    func scrollToSearchMatch(_ idx: Int) {
-        guard idx >= 0 && idx < searchMatches.count else { return }
-        let r = searchMatches[idx]
-        outputTV.scrollRangeToVisible(r)
+    func scrollToCurrentMatch() {
+        if searchInOutput {
+            guard searchIdx >= 0 && searchIdx < searchMatches.count else { return }
+            outputTV.scrollRangeToVisible(searchMatches[searchIdx])
+        } else {
+            guard searchIdx >= 0 && searchIdx < inputSearchMatches.count else { return }
+            inputTV.scrollRangeToVisible(inputSearchMatches[searchIdx])
+        }
+    }
+    /// Re-run search on current displayed text (after fold/unfold)
+    func refreshSearchHighlights() {
+        let q = lastSearchQuery
+        if q.isEmpty { return }
+        let qLower = q.lowercased()
+        // Re-search in output (which may have changed due to folding)
+        let outText = outputTV.string as NSString
+        let outTextLower = outText.lowercased as NSString
+        searchMatches = []; var pos = 0
+        while true {
+            let found = outTextLower.range(of: qLower, options: [], range: NSRange(location: pos, length: outTextLower.length - pos))
+            if found.location == NSNotFound { break }
+            searchMatches.append(found); pos = found.location + found.length
+        }
+        // Input matches don't change with folding, but re-count total
+        let total = searchMatches.count + inputSearchMatches.count
+        if total == 0 {
+            searchIdx = -1; searchInOutput = true; searchInfoL.stringValue = "无结果"
+        } else {
+            // Reset to first match
+            searchIdx = 0
+            searchInOutput = !searchMatches.isEmpty
+            highlightSearchMatches()
+            let side = searchInOutput ? "右" : "左"
+            searchInfoL.stringValue = "1 / \(total) (\(side))"
+            scrollToCurrentMatch()
+        }
     }
     @objc func copyMatchedValues() {
         guard let q = searchField?.stringValue.trimmingCharacters(in: .whitespaces), !q.isEmpty, let data = lastParsed else {
@@ -1328,14 +1672,15 @@ class JSONVC: NSViewController, NSTextViewDelegate {
     }
 
     // MARK: - JSON Pretty Print
-    func prettyPrint(_ value: Any, indent: String) -> String {
-        return renderVal(value, depth: 0, indent: indent)
+    func prettyPrint(_ value: Any, indent: String, keyOrder: [[String]]? = nil) -> String {
+        return renderVal(value, depth: 0, indent: indent, keyOrder: keyOrder, keyOrderIdx: KeyOrderIdx())
     }
-    func renderVal(_ value: Any, depth: Int, indent: String) -> String {
+    /// Mutable index counter for traversing keyOrder array
+    class KeyOrderIdx { var idx = 0 }
+    func renderVal(_ value: Any, depth: Int, indent: String, keyOrder: [[String]]?, keyOrderIdx: KeyOrderIdx) -> String {
         let prefix = String(repeating: indent, count: depth)
         let child = String(repeating: indent, count: depth + 1)
         if value is NSNull { return "null" }
-        if let b = value as? Bool { return b ? "true" : "false" }
         if let n = value as? NSNumber {
             if CFBooleanGetTypeID() == CFGetTypeID(n) { return n.boolValue ? "true" : "false" }
             if n.doubleValue == Double(n.intValue) && !"\(n)".contains(".") { return "\(n.intValue)" }
@@ -1347,18 +1692,29 @@ class JSONVC: NSViewController, NSTextViewDelegate {
             var lines = ["["]
             for (i, item) in arr.enumerated() {
                 let comma = i < arr.count - 1 ? "," : ""
-                lines.append("\(child)\(renderVal(item, depth: depth + 1, indent: indent))\(comma)")
+                lines.append("\(child)\(renderVal(item, depth: depth + 1, indent: indent, keyOrder: keyOrder, keyOrderIdx: keyOrderIdx))\(comma)")
             }
             lines.append("\(prefix)]"); return lines.joined(separator: "\n")
         }
         if let dict = value as? [String: Any] {
             if dict.isEmpty { return "{}" }
-            let keys = dict.keys.sorted()
+            // Use original key order if available, otherwise keep dict.keys order (no sorting)
+            let keys: [String]
+            if let order = keyOrder, keyOrderIdx.idx < order.count {
+                let origOrder = order[keyOrderIdx.idx]
+                keyOrderIdx.idx += 1
+                // Use origOrder but include any keys that might not be in origOrder
+                let origSet = Set(origOrder)
+                let extra = dict.keys.filter { !origSet.contains($0) }
+                keys = origOrder.filter { dict[$0] != nil } + extra
+            } else {
+                keys = Array(dict.keys)
+            }
             var lines = ["{"]
             for (i, key) in keys.enumerated() {
                 let comma = i < keys.count - 1 ? "," : ""
                 let val = dict[key]!
-                let rendered = renderVal(val, depth: depth + 1, indent: indent)
+                let rendered = renderVal(val, depth: depth + 1, indent: indent, keyOrder: keyOrder, keyOrderIdx: keyOrderIdx)
                 if rendered.contains("\n") {
                     let rLines = rendered.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
                     var r = "\(child)\(escStr(key)): \(rLines[0])"
@@ -1383,6 +1739,114 @@ class JSONVC: NSViewController, NSTextViewDelegate {
             }
         }
         r += "\""; return r
+    }
+
+    /// Extract key order from original JSON string for all objects (in DFS pre-order)
+    /// The result array must match the order that renderVal consumes keyOrder entries:
+    /// each object's keys are recorded BEFORE recursing into its values.
+    func extractKeyOrder(from json: String) -> [[String]] {
+        var result: [[String]] = []
+        let chars = Array(json)
+        let len = chars.count
+        var i = 0
+
+        func skipWhitespace() {
+            while i < len && (chars[i] == " " || chars[i] == "\n" || chars[i] == "\r" || chars[i] == "\t") { i += 1 }
+        }
+        func readString() -> String? {
+            guard i < len && chars[i] == "\"" else { return nil }
+            i += 1 // skip opening "
+            var s = ""
+            while i < len {
+                let c = chars[i]
+                if c == "\\" {
+                    i += 1
+                    guard i < len else { break }
+                    let esc = chars[i]
+                    switch esc {
+                    case "\"": s.append("\"")
+                    case "\\": s.append("\\")
+                    case "/": s.append("/")
+                    case "n": s.append("\n")
+                    case "r": s.append("\r")
+                    case "t": s.append("\t")
+                    case "b": s.append("\u{08}")
+                    case "f": s.append("\u{0C}")
+                    case "u":
+                        // Parse \uXXXX
+                        i += 1
+                        var hex = ""
+                        for _ in 0..<4 {
+                            guard i < len else { break }
+                            hex.append(chars[i]); i += 1
+                        }
+                        if let code = UInt32(hex, radix: 16), let scalar = Unicode.Scalar(code) {
+                            s.append(Character(scalar))
+                        }
+                        continue // already advanced i
+                    default: s.append(esc) // unknown escape, keep as-is
+                    }
+                    i += 1; continue
+                }
+                if c == "\"" { i += 1; return s }
+                s.append(c); i += 1
+            }
+            return s
+        }
+        func skipValue() {
+            skipWhitespace()
+            guard i < len else { return }
+            let c = chars[i]
+            if c == "\"" { _ = readString() }
+            else if c == "{" { scanObject() }
+            else if c == "[" { scanArray() }
+            else { while i < len && chars[i] != "," && chars[i] != "}" && chars[i] != "]" && chars[i] != " " && chars[i] != "\n" && chars[i] != "\r" && chars[i] != "\t" { i += 1 } }
+        }
+        func scanObject() {
+            guard i < len && chars[i] == "{" else { return }
+            i += 1 // skip {
+            skipWhitespace()
+
+            // Two-pass approach: first pass collects keys, second pass recurses into values
+            // But we need to do it in one pass. Instead, reserve a slot in result first,
+            // collect keys while scanning, then fill the slot.
+            let slotIndex = result.count
+            result.append([]) // reserve slot for this object's keys
+
+            if i < len && chars[i] == "}" { i += 1; return } // empty object
+            var keys: [String] = []
+            while i < len {
+                skipWhitespace()
+                if i < len && chars[i] == "}" { i += 1; break }
+                if let key = readString() { keys.append(key) }
+                skipWhitespace()
+                if i < len && chars[i] == ":" { i += 1 }
+                skipValue() // this may recursively append more entries to result
+                skipWhitespace()
+                if i < len && chars[i] == "," { i += 1 }
+            }
+            result[slotIndex] = keys // fill the reserved slot
+        }
+        func scanArray() {
+            guard i < len && chars[i] == "[" else { return }
+            i += 1 // skip [
+            skipWhitespace()
+            if i < len && chars[i] == "]" { i += 1; return }
+            while i < len {
+                skipWhitespace()
+                if i < len && chars[i] == "]" { i += 1; break }
+                skipValue()
+                skipWhitespace()
+                if i < len && chars[i] == "," { i += 1 }
+            }
+        }
+
+        skipWhitespace()
+        if i < len {
+            if chars[i] == "{" { scanObject() }
+            else if chars[i] == "[" { scanArray() }
+        }
+        return result
     }
 
     // MARK: - Syntax Highlighting
@@ -1474,15 +1938,14 @@ class TimestampVC: NSViewController, NSTextFieldDelegate {
     var timer: Timer?
     var secBtn: NSButton!
     var msBtn: NSButton!
-    var toDateInput: NSTextField!
-    var toDateResult: NSTextField!
+    var toDateRows: [(row: NSView, input: NSTextField, unitSel: NSPopUpButton, result: NSTextField, copyBtn: NSButton, lastResult: String)] = []
+    var toDateStack: NSStackView!
+    var toDateCard: NSView!
+    var toDateBottomC: NSLayoutConstraint?
     var toStampInput: NSTextField!
     var toStampResult: NSTextField!
-    var toDateCopyBtn: NSButton!
     var toStampCopyS: NSButton!
     var toStampCopyMs: NSButton!
-    var toDateUnitSel: NSPopUpButton!
-    var lastToDateResult = ""
     var lastToStampSec = ""
     var lastToStampMs = ""
 
@@ -1582,59 +2045,22 @@ class TimestampVC: NSViewController, NSTextFieldDelegate {
             currentDatetimeL.bottomAnchor.constraint(equalTo: c1.bottomAnchor, constant: -20),
         ])
 
-        // Card 2: Timestamp → Date (two-row layout)
-        let c2 = makeCard(); container.addSubview(c2)
+        // Card 2: Timestamp → Date (dynamic multi-row)
+        toDateCard = makeCard(); container.addSubview(toDateCard)
+        let c2 = toDateCard!
         let c2T = makeCardTitle("🔄 时间戳 → 日期时间"); c2.addSubview(c2T)
 
-        // Row 1: input box (NSView bg) + unit selector + convert button
-        let toDateInputBox = NSView(); toDateInputBox.wantsLayer = true
-        toDateInputBox.layer?.backgroundColor = NSColor.white.cgColor
-        toDateInputBox.layer?.cornerRadius = 8; toDateInputBox.layer?.borderWidth = 1
-        toDateInputBox.layer?.borderColor = T.brd.cgColor; toDateInputBox.layer?.masksToBounds = true
-        toDateInputBox.translatesAutoresizingMaskIntoConstraints = false; c2.addSubview(toDateInputBox)
+        // "+" button next to title
+        let addRowBtn = NSButton(title: "＋", target: self, action: #selector(addToDateRow))
+        addRowBtn.wantsLayer = true; addRowBtn.isBordered = false
+        addRowBtn.layer?.backgroundColor = T.accent.cgColor; addRowBtn.layer?.cornerRadius = 12
+        addRowBtn.contentTintColor = .white; addRowBtn.font = NSFont.systemFont(ofSize: 14, weight: .bold)
+        addRowBtn.translatesAutoresizingMaskIntoConstraints = false; c2.addSubview(addRowBtn)
 
-        toDateInput = NSTextField(); toDateInput.placeholderString = "输入时间戳"
-        toDateInput.font = T.mono; toDateInput.focusRingType = .none
-        toDateInput.isBordered = false; toDateInput.drawsBackground = false
-        toDateInput.isBezeled = false; toDateInput.backgroundColor = .clear
-        toDateInput.translatesAutoresizingMaskIntoConstraints = false
-        toDateInput.target = self; toDateInput.action = #selector(toDateConvert)
-        if let cell = toDateInput.cell as? NSTextFieldCell {
-            cell.wraps = false; cell.isScrollable = true
-            cell.usesSingleLineMode = true; cell.lineBreakMode = .byTruncatingTail
-            cell.drawsBackground = false
-        }
-        toDateInputBox.addSubview(toDateInput)
-
-        toDateUnitSel = NSPopUpButton()
-        toDateUnitSel.addItem(withTitle: "自动"); toDateUnitSel.addItem(withTitle: "秒"); toDateUnitSel.addItem(withTitle: "毫秒")
-        toDateUnitSel.selectItem(at: 0); toDateUnitSel.font = NSFont.systemFont(ofSize: 13)
-        toDateUnitSel.translatesAutoresizingMaskIntoConstraints = false
-        toDateUnitSel.setContentHuggingPriority(.required, for: .horizontal)
-        c2.addSubview(toDateUnitSel)
-
-        let toDateBtn = NSButton(title: "转换", target: self, action: #selector(toDateConvert))
-        toDateBtn.wantsLayer = true; toDateBtn.layer?.backgroundColor = T.accent.cgColor
-        toDateBtn.layer?.cornerRadius = 8; toDateBtn.contentTintColor = .white
-        toDateBtn.isBordered = false; toDateBtn.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
-        toDateBtn.translatesAutoresizingMaskIntoConstraints = false; c2.addSubview(toDateBtn)
-
-        // Row 2: result box (NSView bg) + copy button
-        let toDateResultBox = NSView(); toDateResultBox.wantsLayer = true
-        toDateResultBox.layer?.backgroundColor = T.bgInput.cgColor
-        toDateResultBox.layer?.cornerRadius = 8; toDateResultBox.layer?.borderWidth = 1
-        toDateResultBox.layer?.borderColor = T.brd.cgColor; toDateResultBox.layer?.masksToBounds = true
-        toDateResultBox.translatesAutoresizingMaskIntoConstraints = false; c2.addSubview(toDateResultBox)
-
-        toDateResult = NSTextField(labelWithString: "转换结果"); toDateResult.font = T.mono
-        toDateResult.textColor = T.t3; toDateResult.isSelectable = true
-        toDateResult.alignment = .left; toDateResult.lineBreakMode = .byTruncatingTail
-        toDateResult.translatesAutoresizingMaskIntoConstraints = false
-        toDateResultBox.addSubview(toDateResult)
-
-        toDateCopyBtn = NSButton(title: "复制", target: self, action: #selector(copyToDateResult))
-        toDateCopyBtn.bezelStyle = .roundRect; toDateCopyBtn.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-        toDateCopyBtn.translatesAutoresizingMaskIntoConstraints = false; toDateCopyBtn.isHidden = true; c2.addSubview(toDateCopyBtn)
+        // Stack view for rows
+        toDateStack = NSStackView(); toDateStack.orientation = .vertical
+        toDateStack.spacing = 10; toDateStack.alignment = .leading
+        toDateStack.translatesAutoresizingMaskIntoConstraints = false; c2.addSubview(toDateStack)
 
         NSLayoutConstraint.activate([
             c2.topAnchor.constraint(equalTo: c1.bottomAnchor, constant: 20),
@@ -1643,45 +2069,26 @@ class TimestampVC: NSViewController, NSTextFieldDelegate {
             c2T.topAnchor.constraint(equalTo: c2.topAnchor, constant: 20),
             c2T.leadingAnchor.constraint(equalTo: c2.leadingAnchor, constant: 24),
 
-            // Row 1: input(55%) + gap + unit(80) + gap + btn(72) + padding
-            toDateInputBox.topAnchor.constraint(equalTo: c2T.bottomAnchor, constant: 16),
-            toDateInputBox.leadingAnchor.constraint(equalTo: c2.leadingAnchor, constant: 24),
-            toDateInputBox.widthAnchor.constraint(equalTo: c2.widthAnchor, multiplier: 0.55, constant: -24),
-            toDateInputBox.heightAnchor.constraint(equalToConstant: 36),
-            toDateInput.leadingAnchor.constraint(equalTo: toDateInputBox.leadingAnchor, constant: 10),
-            toDateInput.trailingAnchor.constraint(equalTo: toDateInputBox.trailingAnchor, constant: -10),
-            toDateInput.centerYAnchor.constraint(equalTo: toDateInputBox.centerYAnchor),
+            addRowBtn.centerYAnchor.constraint(equalTo: c2T.centerYAnchor),
+            addRowBtn.leadingAnchor.constraint(equalTo: c2T.trailingAnchor, constant: 10),
+            addRowBtn.widthAnchor.constraint(equalToConstant: 24),
+            addRowBtn.heightAnchor.constraint(equalToConstant: 24),
 
-            toDateUnitSel.centerYAnchor.constraint(equalTo: toDateInputBox.centerYAnchor),
-            toDateUnitSel.leadingAnchor.constraint(equalTo: toDateInputBox.trailingAnchor, constant: 12),
-            toDateUnitSel.widthAnchor.constraint(equalToConstant: 80),
-
-            toDateBtn.centerYAnchor.constraint(equalTo: toDateInputBox.centerYAnchor),
-            toDateBtn.trailingAnchor.constraint(equalTo: c2.trailingAnchor, constant: -24),
-            toDateBtn.widthAnchor.constraint(equalToConstant: 72),
-            toDateBtn.heightAnchor.constraint(equalToConstant: 32),
-
-            // Row 2: result box full width + copy btn
-            toDateResultBox.topAnchor.constraint(equalTo: toDateInputBox.bottomAnchor, constant: 12),
-            toDateResultBox.leadingAnchor.constraint(equalTo: c2.leadingAnchor, constant: 24),
-            toDateResultBox.trailingAnchor.constraint(equalTo: c2.trailingAnchor, constant: -24),
-            toDateResultBox.heightAnchor.constraint(equalToConstant: 36),
-            toDateResultBox.bottomAnchor.constraint(equalTo: c2.bottomAnchor, constant: -20),
-            toDateResult.leadingAnchor.constraint(equalTo: toDateResultBox.leadingAnchor, constant: 10),
-            toDateResult.trailingAnchor.constraint(equalTo: toDateResultBox.trailingAnchor, constant: -10),
-            toDateResult.centerYAnchor.constraint(equalTo: toDateResultBox.centerYAnchor),
-
-            toDateCopyBtn.centerYAnchor.constraint(equalTo: toDateResultBox.centerYAnchor),
-            toDateCopyBtn.trailingAnchor.constraint(equalTo: toDateResultBox.trailingAnchor, constant: -8),
-            toDateCopyBtn.widthAnchor.constraint(equalToConstant: 56),
-            toDateCopyBtn.heightAnchor.constraint(equalToConstant: 28),
+            toDateStack.topAnchor.constraint(equalTo: c2T.bottomAnchor, constant: 16),
+            toDateStack.leadingAnchor.constraint(equalTo: c2.leadingAnchor, constant: 24),
+            toDateStack.trailingAnchor.constraint(equalTo: c2.trailingAnchor, constant: -24),
         ])
+        toDateBottomC = toDateStack.bottomAnchor.constraint(equalTo: c2.bottomAnchor, constant: -20)
+        toDateBottomC?.isActive = true
 
-        // Card 3: Date → Timestamp (two-row layout)
+        // Add first row
+        addToDateRow()
+
+        // Card 3: Date → Timestamp (single-row layout)
         let c3 = makeCard(); container.addSubview(c3)
         let c3T = makeCardTitle("🔄 日期时间 → 时间戳"); c3.addSubview(c3T)
 
-        // Row 1: input box (NSView bg) + convert button
+        // Input box
         let toStampInputBox = NSView(); toStampInputBox.wantsLayer = true
         toStampInputBox.layer?.backgroundColor = NSColor.white.cgColor
         toStampInputBox.layer?.cornerRadius = 8; toStampInputBox.layer?.borderWidth = 1
@@ -1702,25 +2109,21 @@ class TimestampVC: NSViewController, NSTextFieldDelegate {
         }
         toStampInputBox.addSubview(toStampInput)
 
+        // Convert button
         let toStampBtn = NSButton(title: "转换", target: self, action: #selector(toStampConvert))
         toStampBtn.wantsLayer = true; toStampBtn.layer?.backgroundColor = T.accent.cgColor
         toStampBtn.layer?.cornerRadius = 8; toStampBtn.contentTintColor = .white
         toStampBtn.isBordered = false; toStampBtn.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
         toStampBtn.translatesAutoresizingMaskIntoConstraints = false; c3.addSubview(toStampBtn)
 
-        // Row 2: result box (NSView bg) + copy buttons
-        let toStampResultBox = NSView(); toStampResultBox.wantsLayer = true
-        toStampResultBox.layer?.backgroundColor = T.bgInput.cgColor
-        toStampResultBox.layer?.cornerRadius = 8; toStampResultBox.layer?.borderWidth = 1
-        toStampResultBox.layer?.borderColor = T.brd.cgColor; toStampResultBox.layer?.masksToBounds = true
-        toStampResultBox.translatesAutoresizingMaskIntoConstraints = false; c3.addSubview(toStampResultBox)
-
+        // Result label (inline)
         toStampResult = NSTextField(labelWithString: "转换结果"); toStampResult.font = T.mono
         toStampResult.textColor = T.t3; toStampResult.isSelectable = true
         toStampResult.alignment = .left; toStampResult.lineBreakMode = .byTruncatingTail
         toStampResult.translatesAutoresizingMaskIntoConstraints = false
-        toStampResultBox.addSubview(toStampResult)
+        c3.addSubview(toStampResult)
 
+        // Copy buttons
         toStampCopyS = NSButton(title: "复制(s)", target: self, action: #selector(copyStampSec))
         toStampCopyS.bezelStyle = .roundRect; toStampCopyS.font = NSFont.systemFont(ofSize: 11, weight: .medium)
         toStampCopyS.translatesAutoresizingMaskIntoConstraints = false; toStampCopyS.isHidden = true; c3.addSubview(toStampCopyS)
@@ -1736,39 +2139,34 @@ class TimestampVC: NSViewController, NSTextFieldDelegate {
             c3T.topAnchor.constraint(equalTo: c3.topAnchor, constant: 20),
             c3T.leadingAnchor.constraint(equalTo: c3.leadingAnchor, constant: 24),
 
-            // Row 1: input(55%) + gap + btn(72) + padding
+            // Single row: [inputBox] [btn] [result...] [copyMs] [copyS]
             toStampInputBox.topAnchor.constraint(equalTo: c3T.bottomAnchor, constant: 16),
             toStampInputBox.leadingAnchor.constraint(equalTo: c3.leadingAnchor, constant: 24),
-            toStampInputBox.widthAnchor.constraint(equalTo: c3.widthAnchor, multiplier: 0.55, constant: -24),
+            toStampInputBox.widthAnchor.constraint(equalTo: c3.widthAnchor, multiplier: 0.35, constant: -24),
             toStampInputBox.heightAnchor.constraint(equalToConstant: 36),
+            toStampInputBox.bottomAnchor.constraint(equalTo: c3.bottomAnchor, constant: -20),
             toStampInput.leadingAnchor.constraint(equalTo: toStampInputBox.leadingAnchor, constant: 10),
             toStampInput.trailingAnchor.constraint(equalTo: toStampInputBox.trailingAnchor, constant: -10),
             toStampInput.centerYAnchor.constraint(equalTo: toStampInputBox.centerYAnchor),
 
             toStampBtn.centerYAnchor.constraint(equalTo: toStampInputBox.centerYAnchor),
-            toStampBtn.trailingAnchor.constraint(equalTo: c3.trailingAnchor, constant: -24),
-            toStampBtn.widthAnchor.constraint(equalToConstant: 72),
+            toStampBtn.leadingAnchor.constraint(equalTo: toStampInputBox.trailingAnchor, constant: 8),
+            toStampBtn.widthAnchor.constraint(equalToConstant: 56),
             toStampBtn.heightAnchor.constraint(equalToConstant: 32),
 
-            // Row 2: result box full width + copy btns inside
-            toStampResultBox.topAnchor.constraint(equalTo: toStampInputBox.bottomAnchor, constant: 12),
-            toStampResultBox.leadingAnchor.constraint(equalTo: c3.leadingAnchor, constant: 24),
-            toStampResultBox.trailingAnchor.constraint(equalTo: c3.trailingAnchor, constant: -24),
-            toStampResultBox.heightAnchor.constraint(equalToConstant: 36),
-            toStampResultBox.bottomAnchor.constraint(equalTo: c3.bottomAnchor, constant: -20),
-            toStampResult.leadingAnchor.constraint(equalTo: toStampResultBox.leadingAnchor, constant: 10),
-            toStampResult.trailingAnchor.constraint(equalTo: toStampResultBox.trailingAnchor, constant: -10),
-            toStampResult.centerYAnchor.constraint(equalTo: toStampResultBox.centerYAnchor),
+            toStampResult.centerYAnchor.constraint(equalTo: toStampInputBox.centerYAnchor),
+            toStampResult.leadingAnchor.constraint(equalTo: toStampBtn.trailingAnchor, constant: 12),
+            toStampResult.trailingAnchor.constraint(equalTo: toStampCopyMs.leadingAnchor, constant: -8),
 
-            toStampCopyS.centerYAnchor.constraint(equalTo: toStampResultBox.centerYAnchor),
-            toStampCopyS.trailingAnchor.constraint(equalTo: toStampResultBox.trailingAnchor, constant: -8),
-            toStampCopyS.widthAnchor.constraint(equalToConstant: 68),
-            toStampCopyS.heightAnchor.constraint(equalToConstant: 28),
-
-            toStampCopyMs.centerYAnchor.constraint(equalTo: toStampResultBox.centerYAnchor),
+            toStampCopyMs.centerYAnchor.constraint(equalTo: toStampInputBox.centerYAnchor),
             toStampCopyMs.trailingAnchor.constraint(equalTo: toStampCopyS.leadingAnchor, constant: -6),
             toStampCopyMs.widthAnchor.constraint(equalToConstant: 76),
             toStampCopyMs.heightAnchor.constraint(equalToConstant: 28),
+
+            toStampCopyS.centerYAnchor.constraint(equalTo: toStampInputBox.centerYAnchor),
+            toStampCopyS.trailingAnchor.constraint(equalTo: c3.trailingAnchor, constant: -24),
+            toStampCopyS.widthAnchor.constraint(equalToConstant: 68),
+            toStampCopyS.heightAnchor.constraint(equalToConstant: 28),
         ])
     }
 
@@ -1815,16 +2213,137 @@ class TimestampVC: NSViewController, NSTextFieldDelegate {
 
     func controlTextDidChange(_ obj: Notification) {
         guard let field = obj.object as? NSTextField else { return }
-        if field === toDateInput { toDateConvert() }
+        if let idx = toDateRows.firstIndex(where: { $0.input === field }) { convertToDateAtRow(idx) }
         else if field === toStampInput { toStampConvert() }
     }
 
-    @objc func toDateConvert() {
-        let input = toDateInput.stringValue.trimmingCharacters(in: .whitespaces)
-        if input.isEmpty { toDateResult.stringValue = "请输入时间戳"; toDateResult.textColor = T.t3; toDateCopyBtn.isHidden = true; return }
-        guard let num = Double(input) else { toDateResult.stringValue = "无效的时间戳"; toDateResult.textColor = T.red; toDateCopyBtn.isHidden = true; return }
+    @objc func addToDateRow() {
+        let rowView = NSView(); rowView.translatesAutoresizingMaskIntoConstraints = false
 
-        let unitSel = toDateUnitSel.indexOfSelectedItem
+        // Input box
+        let inputBox = NSView(); inputBox.wantsLayer = true
+        inputBox.layer?.backgroundColor = NSColor.white.cgColor
+        inputBox.layer?.cornerRadius = 8; inputBox.layer?.borderWidth = 1
+        inputBox.layer?.borderColor = T.brd.cgColor; inputBox.layer?.masksToBounds = true
+        inputBox.translatesAutoresizingMaskIntoConstraints = false; rowView.addSubview(inputBox)
+
+        let input = NSTextField(); input.placeholderString = "输入时间戳"
+        input.font = T.mono; input.focusRingType = .none
+        input.isBordered = false; input.drawsBackground = false
+        input.isBezeled = false; input.backgroundColor = .clear
+        input.translatesAutoresizingMaskIntoConstraints = false
+        input.target = self; input.action = #selector(toDateConvertRow(_:))
+        input.delegate = self
+        if let cell = input.cell as? NSTextFieldCell {
+            cell.wraps = false; cell.isScrollable = true
+            cell.usesSingleLineMode = true; cell.lineBreakMode = .byTruncatingTail
+            cell.drawsBackground = false
+        }
+        inputBox.addSubview(input)
+
+        // Unit selector
+        let unitSel = NSPopUpButton()
+        unitSel.addItem(withTitle: "自动"); unitSel.addItem(withTitle: "秒"); unitSel.addItem(withTitle: "毫秒")
+        unitSel.selectItem(at: 0); unitSel.font = NSFont.systemFont(ofSize: 13)
+        unitSel.translatesAutoresizingMaskIntoConstraints = false
+        unitSel.setContentHuggingPriority(.required, for: .horizontal)
+        rowView.addSubview(unitSel)
+
+        // Convert button
+        let cvtBtn = NSButton(title: "转换", target: self, action: #selector(toDateConvertBtn(_:)))
+        cvtBtn.wantsLayer = true; cvtBtn.layer?.backgroundColor = T.accent.cgColor
+        cvtBtn.layer?.cornerRadius = 8; cvtBtn.contentTintColor = .white
+        cvtBtn.isBordered = false; cvtBtn.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        cvtBtn.translatesAutoresizingMaskIntoConstraints = false; rowView.addSubview(cvtBtn)
+
+        // Result label
+        let result = NSTextField(labelWithString: "转换结果"); result.font = T.mono
+        result.textColor = T.t3; result.isSelectable = true
+        result.alignment = .left; result.lineBreakMode = .byTruncatingTail
+        result.translatesAutoresizingMaskIntoConstraints = false; rowView.addSubview(result)
+
+        // Copy button
+        let copyBtn = NSButton(title: "复制", target: self, action: #selector(copyToDateRow(_:)))
+        copyBtn.bezelStyle = .roundRect; copyBtn.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        copyBtn.translatesAutoresizingMaskIntoConstraints = false; copyBtn.isHidden = true; rowView.addSubview(copyBtn)
+
+        // Delete button (shown for rows after the first)
+        let delBtn = NSButton(title: "✕", target: self, action: #selector(removeToDateRow(_:)))
+        delBtn.wantsLayer = true; delBtn.isBordered = false
+        delBtn.layer?.cornerRadius = 10; delBtn.contentTintColor = T.red
+        delBtn.font = NSFont.systemFont(ofSize: 12, weight: .bold)
+        delBtn.translatesAutoresizingMaskIntoConstraints = false
+        delBtn.isHidden = toDateRows.isEmpty // hide for first row
+        rowView.addSubview(delBtn)
+
+        NSLayoutConstraint.activate([
+            rowView.heightAnchor.constraint(equalToConstant: 36),
+
+            inputBox.leadingAnchor.constraint(equalTo: rowView.leadingAnchor),
+            inputBox.centerYAnchor.constraint(equalTo: rowView.centerYAnchor),
+            inputBox.widthAnchor.constraint(equalTo: rowView.widthAnchor, multiplier: 0.26),
+            inputBox.heightAnchor.constraint(equalToConstant: 36),
+            input.leadingAnchor.constraint(equalTo: inputBox.leadingAnchor, constant: 10),
+            input.trailingAnchor.constraint(equalTo: inputBox.trailingAnchor, constant: -10),
+            input.centerYAnchor.constraint(equalTo: inputBox.centerYAnchor),
+
+            unitSel.centerYAnchor.constraint(equalTo: rowView.centerYAnchor),
+            unitSel.leadingAnchor.constraint(equalTo: inputBox.trailingAnchor, constant: 8),
+            unitSel.widthAnchor.constraint(equalToConstant: 72),
+
+            cvtBtn.centerYAnchor.constraint(equalTo: rowView.centerYAnchor),
+            cvtBtn.leadingAnchor.constraint(equalTo: unitSel.trailingAnchor, constant: 8),
+            cvtBtn.widthAnchor.constraint(equalToConstant: 56),
+            cvtBtn.heightAnchor.constraint(equalToConstant: 32),
+
+            result.centerYAnchor.constraint(equalTo: rowView.centerYAnchor),
+            result.leadingAnchor.constraint(equalTo: cvtBtn.trailingAnchor, constant: 12),
+            result.trailingAnchor.constraint(equalTo: copyBtn.leadingAnchor, constant: -6),
+
+            copyBtn.centerYAnchor.constraint(equalTo: rowView.centerYAnchor),
+            copyBtn.trailingAnchor.constraint(equalTo: delBtn.leadingAnchor, constant: -4),
+            copyBtn.widthAnchor.constraint(equalToConstant: 48),
+            copyBtn.heightAnchor.constraint(equalToConstant: 28),
+
+            delBtn.centerYAnchor.constraint(equalTo: rowView.centerYAnchor),
+            delBtn.trailingAnchor.constraint(equalTo: rowView.trailingAnchor),
+            delBtn.widthAnchor.constraint(equalToConstant: 24),
+            delBtn.heightAnchor.constraint(equalToConstant: 24),
+        ])
+
+        toDateStack.addArrangedSubview(rowView)
+        rowView.widthAnchor.constraint(equalTo: toDateStack.widthAnchor).isActive = true
+        toDateRows.append((row: rowView, input: input, unitSel: unitSel, result: result, copyBtn: copyBtn, lastResult: ""))
+    }
+
+    func findToDateRowIndex(from view: NSView) -> Int? {
+        // Walk up from the sender to find which rowView it belongs to
+        var v: NSView? = view
+        while let current = v {
+            if let idx = toDateRows.firstIndex(where: { $0.row === current }) { return idx }
+            v = current.superview
+        }
+        return nil
+    }
+
+    @objc func toDateConvertRow(_ sender: NSTextField) {
+        guard let idx = findToDateRowIndex(from: sender) else { return }
+        convertToDateAtRow(idx)
+    }
+
+    @objc func toDateConvertBtn(_ sender: NSButton) {
+        guard let idx = findToDateRowIndex(from: sender) else { return }
+        convertToDateAtRow(idx)
+    }
+
+    func convertToDateAtRow(_ idx: Int) {
+        guard idx < toDateRows.count else { return }
+        let row = toDateRows[idx]
+        let input = row.input.stringValue.trimmingCharacters(in: .whitespaces)
+        if input.isEmpty { row.result.stringValue = "请输入时间戳"; row.result.textColor = T.t3; row.copyBtn.isHidden = true; return }
+        guard let num = Double(input) else { row.result.stringValue = "无效的时间戳"; row.result.textColor = T.red; row.copyBtn.isHidden = true; return }
+
+        let unitSel = row.unitSel.indexOfSelectedItem
         var ms: Double
         if unitSel == 0 { ms = num > 1e12 ? num : num * 1000 } // auto
         else if unitSel == 2 { ms = num } // ms
@@ -1833,14 +2352,23 @@ class TimestampVC: NSViewController, NSTextFieldDelegate {
         let date = Date(timeIntervalSince1970: ms / 1000)
         let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM-dd HH:mm:ss"
         let result = fmt.string(from: date)
-        lastToDateResult = result
-        toDateResult.stringValue = result; toDateResult.textColor = T.t1
-        toDateCopyBtn.isHidden = false
+        toDateRows[idx].lastResult = result
+        row.result.stringValue = result; row.result.textColor = T.t1
+        row.copyBtn.isHidden = false
     }
 
-    @objc func copyToDateResult() {
-        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(lastToDateResult, forType: .string)
-        showToast("✓ 已复制: \(lastToDateResult)")
+    @objc func copyToDateRow(_ sender: NSButton) {
+        guard let idx = findToDateRowIndex(from: sender) else { return }
+        let result = toDateRows[idx].lastResult
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(result, forType: .string)
+        showToast("✓ 已复制: \(result)")
+    }
+
+    @objc func removeToDateRow(_ sender: NSButton) {
+        guard let idx = findToDateRowIndex(from: sender), toDateRows.count > 1 else { return }
+        let rowView = toDateRows[idx].row
+        toDateStack.removeArrangedSubview(rowView); rowView.removeFromSuperview()
+        toDateRows.remove(at: idx)
     }
 
     @objc func toStampConvert() {
